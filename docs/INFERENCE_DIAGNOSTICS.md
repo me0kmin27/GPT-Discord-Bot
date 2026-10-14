@@ -40,7 +40,12 @@ internal source filenames/line numbers are emitted. No absolute source paths,
 exception bodies, locals, prompts, answers, auth/account fields, or logs.
 `http_status` is currently null; no HTTP status is inferred from error text.
 Old installed providers that discard numeric codes continue to report null.
-The deadline remains **20 seconds**; it is not enlarged for this test.
+Current phased providers use **preparation up to 3 seconds, then generation up to
+20 seconds** by default, without a competing total-20-second probe timer. Older
+installed providers retain their existing 20-second probe guard. See
+[the shared timeout contract](timeout-contract.md). This standalone probe builds
+a default provider; it does not load `runtime.json` model/search/budget overrides
+and therefore does not reproduce the running service's exact configuration.
 
 - `account/login_required`: managed ChatGPT account was not available in the
   selected application home; check that the operator used the same data directory.
@@ -51,8 +56,15 @@ The deadline remains **20 seconds**; it is not enlarged for this test.
 - `protocol/rpc_rejected`: RPC failure; use the numeric code if present.
 - `completion/response_rejected`: terminal answer or JSON/citation contract did
   not pass; not an empty-knowledge gate.
-- `answer/timeout`: the unchanged deadline expired. This alone does not prove
-  which network/model stage was slow.
+- `preparation/deadline_exceeded` or `generation/deadline_exceeded`, origin `owned`:
+  that application's phase budget expired. `elapsed_ms` is monotonic work-phase
+  elapsed time and `deadline_ms` is its configured duration budget. Cleanup and
+  delivery can add time afterward.
+- `*/timeout`, origin `child_or_native`: a child/native timeout was observed, not
+  proof that the application's budget expired. Known phase boundaries include
+  their elapsed/budget values. Older uninstrumented providers report null timing
+  and cannot distinguish ownership; do not interpret those as proven early native
+  failures or proven deadline expiry.
 - `answer/unknown`: unclassified failure; internal locations identify the catch
   boundary without revealing the exception body.
 
@@ -78,10 +90,10 @@ included here. Treat it as a separate compatibility follow-up if observed.
 `tests/test_inference_diagnostics.py` exercises opt-in refusal, synthetic positive
 and negative results, secret-bearing exceptions/stdout/stderr/logging, RPC numeric
 code retention, fixed service categories, argument errors, missing installation,
-empty-evidence citations, and unchanged 20-second deadline wiring. Existing
+empty-evidence citations, and legacy-provider 20-second deadline wiring. Existing
 transport tests separately exercise actual subprocess timeout and cleanup.
 
-Full combined local suite: **436 passed, 1 skipped** (macOS/Python 3.9).
+Historical PR #18 combined local suite: **436 passed, 1 skipped** (macOS/Python 3.9).
 A real standalone credential-free run against an archived `f1c0957` installation
 and the pinned official native binary returned exit 1, stage `account`, category
 `login_required`, answer_success false, answer_length 0, duration_ms 374, with

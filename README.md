@@ -47,6 +47,12 @@ discord-helper install
 기존 guild 값은 유지하세요. 셸/로컬 네트워크 권한은 확대하지 않으며 웹 URL은
 모델 인용이지 앱이 독립 검증한 확정 사례가 아닙니다.
 
+Codex는 대화 준비(initialization/config/account/thread)에 **최대 3초**, 준비 완료 후
+답변 생성(`turn/start`부터, 웹검색 포함)에 **별도 최대 20초**를 사용합니다.
+3초를 무조건 기다리는 방식이 아닙니다. 취소 후 프로세스 정리와 Discord 전달 시간은
+별도이므로 화면 표시까지 정확히 23초를 보장하지 않습니다.
+[`runtime.json` 시간 설정·공유 검증 계약](docs/timeout-contract.md)을 참고하세요.
+
 ### Codex 설치·로그인 (선택, 추론 활성화와 별개)
 
 Node.js/npm이 있는 환경에서:
