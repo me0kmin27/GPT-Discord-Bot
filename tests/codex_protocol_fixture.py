@@ -82,6 +82,8 @@ for line in sys.stdin:
                 'computer_use', 'image_generation', 'shell_snapshot', 'hooks', 'memories',
                 'request_permissions_tool'), False)}
         config['features']['skip_host_skill_discovery'] = True
+        if SCENARIO.startswith('web_'):
+            config['web_search'] = 'live'
         if SCENARIO == 'unsafe_config':
             config['features']['shell_tool'] = True
         send({'id': message['id'], 'result': {'config': config}})
@@ -102,6 +104,9 @@ for line in sys.stdin:
         assert params['approvalsReviewer'] == 'user'
         assert 'tenant' not in params
         assert 'Evidence and history' in params['developerInstructions']
+        if SCENARIO.startswith('web_'):
+            assert 'Only hosted web search' in params['developerInstructions']
+            assert 'Do not execute tools' not in params['developerInstructions']
         assert not os.path.exists(os.path.join(os.getcwd(), 'AGENTS.md'))
         assert 'OPENAI_API_KEY' not in os.environ
         assert 'DISCORD_BOT_TOKEN' not in os.environ
@@ -143,6 +148,41 @@ for line in sys.stdin:
             scope['threadId'] = 'other-thread'
         if SCENARIO == 'wrong_turn':
             scope['turnId'] = 'other-turn'
+        web_items = []
+        if SCENARIO.startswith('web_'):
+            assert 'web_sources' in params['outputSchema']['required']
+            item = {'id': 'web-1', 'type': 'webSearch', 'query': '', 'action': None, 'results': None}
+            send({'method': 'item/started', 'params': dict(scope, item=item)})
+            item = dict(item, query='synthetic-sensitive query', action={
+                'type': 'search', 'query': 'synthetic-sensitive query', 'queries': None})
+            if SCENARIO == 'web_open':
+                item['action'] = {'type': 'openPage', 'url': 'https://example.com/weather'}
+            if SCENARIO == 'web_find':
+                item['action'] = {'type': 'findInPage', 'url': None, 'pattern': 'weather'}
+            if SCENARIO == 'web_other':
+                item['action'] = {'type': 'other'}
+            if SCENARIO == 'web_bad_action':
+                item['action'] = {'type': 'shell', 'command': 'synthetic-sensitive'}
+            if SCENARIO == 'web_bad_query':
+                item['query'] = []
+            if SCENARIO == 'web_wrong_scope':
+                scope['threadId'] = 'other-thread'
+            if SCENARIO == 'web_local':
+                item = {'id': 'local', 'type': 'commandExecution'}
+            if SCENARIO == 'web_request':
+                send({'id': 'deny-me', 'method': 'item/completed', 'params': dict(scope, item=item)})
+            if SCENARIO == 'web_hang':
+                send({'method': 'item/started', 'params': dict(scope, item=item)})
+                import time
+                time.sleep(60)
+            if SCENARIO != 'web_no_search':
+                send({'method': 'item/completed', 'params': dict(scope, item=item)})
+                web_items.append(item)
+            text = json.dumps({'text': 'Synthetic weather; NOT live AI', 'case_ids': [],
+                               'web_sources': ['https://example.com/weather']})
+            if SCENARIO == 'web_no_sources':
+                text = json.dumps({'text': 'Current weather could not be verified.',
+                                   'case_ids': [], 'web_sources': []})
         if SCENARIO in ('tool_item', 'unknown_item'):
             send({'method': 'item/started', 'params': dict(scope, item={
                   'id': 'tool', 'type': 'commandExecution' if SCENARIO == 'tool_item' else 'newDangerousTool'})})
@@ -163,6 +203,6 @@ for line in sys.stdin:
                         'phase': 'final_answer', 'text': text})})
         send({'method': 'turn/completed', 'params': {'threadId': 'fixture-thread',
               'turn': {'id': 'fixture-turn', 'status': 'failed' if SCENARIO == 'failed_turn' else 'completed',
-                       'error': None, 'items': []}}})
+                       'error': None, 'items': web_items}}})
     else:
         raise AssertionError('unexpected fixture method')

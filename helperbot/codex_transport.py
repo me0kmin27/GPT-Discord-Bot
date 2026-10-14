@@ -132,6 +132,30 @@ def prepare_request(request):
         raise ProviderUnavailable('Codex request bounds or shape rejected') from None
 
 
+def render_web_sources(reply, searched):
+    """Model citations, not verified retrieval; never fetch model-provided URLs."""
+    from urllib.parse import urlsplit
+    sources = reply['web_sources']
+    if (not isinstance(sources, list) or len(sources) > 3
+            or (sources and not searched)):
+        raise ValueError()
+    for url in sources:
+        if (not isinstance(url, str) or not 0 < len(url) <= 512
+                or any(c.isspace() or ord(c) < 32 or c in '<>\\' for c in url)):
+            raise ValueError()
+        parsed = urlsplit(url)
+        if parsed.scheme not in ('https', 'http') or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError()
+    if len(set(sources)) != len(sources):
+        raise ValueError()
+    label = ('Model-cited web sources (not independently verified):\n' + '\n'.join(sources)
+             if sources else 'No web sources supplied; current facts unverified.')
+    text = reply['text'] + '\n\n' + label
+    if len(text) > 1000:
+        raise ValueError()
+    return text
+
+
 class CodexOAuthProvider:
     """Local managed OAuth with bounded, isolated request processes."""
     def __init__(self, executable, data, *, timeout=20, options=None):
@@ -179,7 +203,18 @@ class CodexOAuthProvider:
             cwd = private_dir(root / 'work')
             env = {'HOME': str(home), 'CODEX_HOME': str(codex_home),
                    'PATH': os.defpath, 'LANG': 'C.UTF-8', 'TMPDIR': str(root)}
-            async with StdioClient(self._command(), cwd=cwd, env=env, timeout=self.timeout) as client:
+            web_search = self.options.get('web_search') == 'live'
+            instruction = request.instruction + (
+                " Only hosted web search is permitted; use it for current facts/weather. "
+                "Never use shell, files, local network, MCP or other tools. "
+                "Minimize search queries; do not send private history/evidence to search. "
+                "Return web_sources as at most 3 HTTP(S) source URLs actually used, "
+                "not citation tokens; keep answer plus URLs below 900 characters. "
+                "Web sources are not verified cases. If search is unavailable or insufficient, "
+                "say current facts cannot be verified; never invent sources or current weather."
+                if web_search else " Do not execute tools.")
+            async with StdioClient(self._command(), cwd=cwd, env=env, timeout=self.timeout,
+                                   web_search=web_search) as client:
                 await client.initialize()
                 resolved = await client.rpc('config/read', {'includeLayers': False})
                 validate_config(resolved['config'], self.options)
@@ -189,7 +224,7 @@ class CodexOAuthProvider:
                 thread = await client.rpc('thread/start', {
                     'ephemeral': True, 'cwd': str(cwd), 'sandbox': 'read-only',
                     'approvalPolicy': 'never', 'approvalsReviewer': 'user',
-                    'developerInstructions': request.instruction})
+                    'developerInstructions': instruction})
                 thread_id = thread['thread']['id']
                 if thread['thread'].get('ephemeral') is not True or thread['thread'].get('path') is not None:
                     raise ProviderUnavailable('Codex ephemeral thread required')
@@ -203,6 +238,10 @@ class CodexOAuthProvider:
                           'required': ['text', 'case_ids'], 'properties': {
                               'text': {'type': 'string'},
                               'case_ids': {'type': 'array', 'items': {'type': 'integer'}}}}
+                if web_search:
+                    schema['required'].append('web_sources')
+                    schema['properties']['web_sources'] = {
+                        'type': 'array', 'items': {'type': 'string'}}
                 turn = await client.rpc('turn/start', {
                     'threadId': thread_id, 'input': [{'type': 'text', 'text': payload}],
                     'sandboxPolicy': {'type': 'readOnly', 'networkAccess': False},
@@ -213,7 +252,7 @@ class CodexOAuthProvider:
 
 class StdioClient:
     """One bounded sequential JSON-RPC connection; no subprocess shell or logging."""
-    def __init__(self, command, *, cwd, env, timeout=20):
+    def __init__(self, command, *, cwd, env, timeout=20, web_search=False):
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:
             raise ValueError('Invalid Codex timeout')
         self.timeout = timeout
@@ -225,6 +264,7 @@ class StdioClient:
         self.wire_bytes = 0
         self.event_count = 0
         self.configuration_warning = False
+        self.web_search = web_search
 
 
     async def __aenter__(self):
@@ -329,10 +369,6 @@ class StdioClient:
             if (not isinstance(message['method'], str)
                     or not isinstance(message.get('params'), dict)):
                 raise ProviderUnavailable('Codex malformed notification or request')
-            if message['method'] in ('item/started', 'item/completed'):
-                item = message['params'].get('item')
-                if not isinstance(item, dict) or item.get('type') not in ('userMessage', 'reasoning', 'agentMessage'):
-                    raise ProviderUnavailable('Codex tool or unknown item rejected')
             if 'id' in message:
                 # Includes approvals, dynamic tools, external token refresh, and
                 # UNKNOWN future requests. Never approve or supply credentials.
@@ -349,6 +385,13 @@ class StdioClient:
                     raise ProviderUnavailable('Codex malformed notification or request')
                 return {'method': 'warning', 'params':
                         {'threadId': thread_id} if thread_id is not None else {}}
+            if message['method'] in ('item/started', 'item/completed'):
+                message['params']['item'] = self.checked_item(message['params'].get('item'))
+            if message['method'] in ('turn/started', 'turn/completed'):
+                turn = message['params'].get('turn')
+                if not isinstance(turn, dict) or not isinstance(turn.get('items'), list):
+                    raise ProviderUnavailable('Codex malformed turn')
+                turn['items'] = [self.checked_item(item) for item in turn['items']]
             if message['method'] == 'configWarning':
                 self.configuration_warning = True
                 # Notices are not evidence of invalid configuration, regardless
@@ -364,6 +407,47 @@ class StdioClient:
             if message['method'] == 'error':
                 raise ProviderUnavailable('Codex turn error')
         return message
+
+    def checked_item(self, item):
+        """Validate pinned webSearch envelope; discard queries/results before queuing.
+
+        There is no item status in 0.162.1: lifecycle is item/started/completed.
+        Actions and opaque results are not proof that a URL was fetched.
+        """
+        try:
+            if not isinstance(item, dict):
+                raise ValueError()
+            if item.get('type') in ('userMessage', 'reasoning', 'agentMessage'):
+                return item
+            if not self.web_search or item.get('type') != 'webSearch':
+                raise ValueError()
+            if (not {'type', 'id', 'query', 'action'} <= set(item)
+                    or not set(item) <= {'type', 'id', 'query', 'action', 'results'}
+                    or not isinstance(item['id'], str) or not 0 < len(item['id']) <= 256
+                    or not isinstance(item['query'], str)
+                    or (item.get('results') is not None and not isinstance(item['results'], list))):
+                raise ValueError()
+            action = item['action']
+            if action is not None:
+                fields = {'search': ('query', 'queries'), 'openPage': ('url',),
+                          'findInPage': ('url', 'pattern'), 'other': ()}
+                if not isinstance(action, dict) or not isinstance(action.get('type'), str):
+                    raise ValueError()
+                allowed = fields.get(action['type'])
+                if allowed is None or not set(action) <= {'type', *allowed}:
+                    raise ValueError()
+                for key in allowed:
+                    value = action.get(key)
+                    if value is None:
+                        continue
+                    if key == 'queries':
+                        if not isinstance(value, list) or any(not isinstance(q, str) for q in value):
+                            raise ValueError()
+                    elif not isinstance(value, str):
+                        raise ValueError()
+            return {'type': 'webSearch', 'id': item['id']}
+        except (KeyError, TypeError, ValueError):
+            raise ProviderUnavailable('Codex tool or malformed item rejected') from None
 
     async def rpc(self, method, params):
         self.sequence += 1
@@ -387,6 +471,7 @@ class StdioClient:
     async def completion(self, thread_id, turn_id, evidence):
         # Buffer only; never expose partial text before terminal success.
         final = None
+        searched = False
         streams = {}
         completed = set()
         streamed_bytes = 0
@@ -405,6 +490,9 @@ class StdioClient:
                         raise ValueError()
                 if method in ('item/started', 'item/completed'):
                     item = params['item']
+                    if item['type'] == 'webSearch' and self.web_search:
+                        searched = searched or method == 'item/completed'
+                        continue
                     if item['type'] not in ('userMessage', 'reasoning', 'agentMessage'):
                         raise ValueError()  # Detection, NOT prevention of built-in execution.
                     if item['type'] == 'agentMessage' and method == 'item/completed':
@@ -434,13 +522,15 @@ class StdioClient:
                     if params['threadId'] != thread_id or turn['id'] != turn_id:
                         raise ValueError()
                     if any(item['type'] not in ('userMessage', 'reasoning', 'agentMessage')
+                           and not (self.web_search and item['type'] == 'webSearch')
                            for item in turn['items']):
                         raise ValueError()
                     if method == 'turn/completed':
                         if turn['status'] != 'completed' or turn.get('error') is not None or not final:
                             raise ValueError()
                         reply = json.loads(final)
-                        if (not isinstance(reply, dict) or set(reply) != {'text', 'case_ids'}
+                        expected = {'text', 'case_ids', 'web_sources'} if self.web_search else {'text', 'case_ids'}
+                        if (not isinstance(reply, dict) or set(reply) != expected
                                 or not isinstance(reply['text'], str) or not reply['text'].strip()
                                 or len(reply['text']) > 1000 or not isinstance(reply['case_ids'], list)
                                 or len(reply['case_ids']) > 3
@@ -448,7 +538,8 @@ class StdioClient:
                                 or len(set(reply['case_ids'])) != len(reply['case_ids'])
                                 or not set(reply['case_ids']).issubset({item['id'] for item in evidence})):
                             raise ValueError()
-                        return ProviderReply(reply['text'], tuple(reply['case_ids']))
+                        text = render_web_sources(reply, searched) if self.web_search else reply['text']
+                        return ProviderReply(text, tuple(reply['case_ids']))
         except (KeyError, ValueError, TypeError, RecursionError):
             raise ProviderUnavailable('Codex response contract rejected') from None
 
