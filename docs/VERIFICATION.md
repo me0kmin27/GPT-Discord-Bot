@@ -35,6 +35,17 @@
 - 삭제는 로컬 저장소와 아직 제출하지 않은 응답을 보호합니다. 이미 Discord에 제출된 receipt/embed, 진행 중인 HTTP 전송, 외부 백업을 원격으로 되돌리는 보장은 아닙니다. 사용자 안내대로 Discord 게시물/외부 백업 삭제는 별도입니다.
 - live provider는 계속 disabled입니다. 실 Discord/모델 로그인, 배포, 운영 인증 파일 읽기는 하지 않았습니다. 최종 head의 원격 SHA/CI는 push 후 별도로 읽어 검증하며, 독립 검토 전 병합하지 않습니다.
 
+## Stored-case capacity verification
+
+- Base: `eaa39635fe7f553616140c6cccd0e2347eef1562`; independent worktree/branch, no schema migration.
+- Three observed RED→GREEN slices: mixed candidate/confirmed overflow accepted; invalid environment values accepted or echoed in errors; full-tenant command still awaited its public receipt. All passed after their respective minimal implementation changes.
+- Full local suite: **175 passed, 1 skipped** (macOS Python 3.9.6; only Linux systemd parser unavailable). `compileall`, whitespace check, doctor and `HELPER_CASES_PER_TENANT=500` offline CLI check succeeded.
+- Added real SQLite coverage: total cap, configuration/default/edge validation, thread/user shared quota and cross-tenant negatives, restart with lowered cap without deletion, resolution while full, explicit cleanup reuse, two independent connections after successful preflights, insert/history rollback, lock failure and retry.
+- Added actual command callbacks: known-full rejection before public receipt without consuming admission; competing insert at each receipt await; quota rejection releases pending/admission state; privacy/admin/reset/disable during pending receipt cannot resurrect a row; resolution allowed at capacity; reset cannot free a case slot. Existing HTTP/task-cancellation and receipt-deletion suites remain green.
+- Preflight is advisory, **not a reservation**. A concurrent winner can fill capacity after the public embed is submitted; the loser persists neither case nor history and receives a private rejection. No claim of rolling back Discord HTTP. Final persistence serializes the count+insert under `BEGIN IMMEDIATE`, assuming cooperating writers use the same configuration. Multi-process cancellation remains unsupported.
+- This bounds stored case rows per tenant, **not disk bytes or total history**. Existing over-limit rows remain. Tenant cardinality and conversation/user history key cardinality remain unbounded; SQLite files/journals and backups need separate operational limits. No automatic deletion or live provider/credentials/deployment changes.
+- Remote exact SHA and CI are read after push and reported in the PR/handoff; parent performs independent review and any merge.
+
 ## 독립 검토 체크포인트
 
 1. 최종 PR head의 CI와 테스트 재실행.
