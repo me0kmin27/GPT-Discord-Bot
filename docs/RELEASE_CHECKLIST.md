@@ -81,7 +81,14 @@ admission, 실제 출처 링크 존재/접근성은 이 테스트의 증거가 �
 삭제를 프로세스 안에서 no-op으로 바꾼 음성 대조 실행은 `history(owner) == []`에서 **1 failed**를 관찰했다.
 소스 파일은 변경하지 않았으며 정상 구현으로 재실행한다. 실제 삭제 결함을 발견했다는 뜻이 아니다.
 
-## 공급자 결정 — 비밀 없는 답변만 필요
+## 공급자 결정 — 현재 요구와 이전 검토 기록
+
+**2026-10-14 후속 정정:** 사용자는 **Codex login OAuth 유지 및 구현**을 확정했다.
+아래 A/B/C는 이전 의사결정 시점의 기록이며 인증 방식을 다시 선택하라는 요청이 아니다.
+[Codex OAuth 기술·운영 조건 조사](CODEX_OAUTH_DECISION.md)에 공식 연결 계약, 제한 문구의 정확한 범위,
+무도구 검증 항목 및 SIWC와의 차이를 기록했다. 로그인·배포 없이 transport 구현/오프라인 검증은 진행한다.
+공개 호스팅 조건 확인과 실제 로그인·모델·Discord·배포 검증은 별도 gate다.
+SIWC/API 키/다른 공급자로 묵시 전환하지 않는다. 아래 ‘선택 전’ 문구는 과거 상태로 읽는다.
 
 공식 Codex app-server 문서의 **Auth endpoints**는 다음과 같이 명시한다:
 “App-server authentication has never been permitted for commercial or hosted services.”
