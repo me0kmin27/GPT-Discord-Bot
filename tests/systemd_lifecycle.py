@@ -29,6 +29,33 @@ def wait_event(log, event, pid):
     raise AssertionError(f'fixture did not acknowledge {event} {pid}')
 
 
+def cleanup_unit(unit):
+    errors = []
+    override = unit.parent / f'{UNIT}.d/fixture.conf'
+    actions = [
+        lambda: command('systemctl', '--user', 'stop', UNIT,
+                        expected=99 if sys.argv[1:] == ['--inject-failure'] else 0),
+        lambda: unit.unlink(missing_ok=True),
+        lambda: override.unlink(missing_ok=True),
+        lambda: override.parent.rmdir() if override.parent.exists() else None,
+        lambda: command('systemctl', '--user', 'daemon-reload'),
+    ]
+    for action in actions:
+        try:
+            action()
+        except Exception as error:
+            errors.append(error)
+            print(f'cleanup error: {error}', flush=True)
+    try:
+        assert property_value('LoadState') == 'not-found'
+        assert not unit.exists() and not override.exists()
+        print('PASS: unit/drop-in removed; LoadState=not-found', flush=True)
+    except Exception as error:
+        errors.append(error)
+    if errors:
+        raise errors[0]
+
+
 def main():
     assert sys.platform == 'linux' and os.getuid() != 0
     assert os.environ['USER'].startswith('dhci')
@@ -70,6 +97,9 @@ def main():
         first = int(property_value('MainPID'))
         assert first > 0
         wait_event(log, 'start', first)
+        if sys.argv[1:] == ['--inject-failure']:
+            print('INJECT: original lifecycle exit 73 after real fixture start', flush=True)
+            raise SystemExit(73)
         command(*cli, 'status')
         command(*cli, 'restart')
         second = int(property_value('MainPID'))
@@ -90,16 +120,13 @@ def main():
         assert not (paths.data / 'state.db').exists()
         print('PASS: real user-systemd fixture lifecycle; NOT live bot readiness', flush=True)
     finally:
-        command('systemctl', '--user', 'stop', UNIT)
-        if unit.exists():
-            unit.unlink()
-        override = paths.units / f'{UNIT}.d/fixture.conf'
-        override.unlink(missing_ok=True)
-        if override.parent.exists():
-            override.parent.rmdir()
-        command('systemctl', '--user', 'daemon-reload')
-        assert property_value('LoadState') == 'not-found'
-        print('PASS: service stopped and unit/drop-in removed', flush=True)
+        original_error = sys.exc_info()[0] is not None
+        try:
+            cleanup_unit(unit)
+        except Exception:
+            if not original_error:
+                raise
+            print('cleanup failed; preserving original lifecycle exception', flush=True)
 
 
 if __name__ == '__main__':

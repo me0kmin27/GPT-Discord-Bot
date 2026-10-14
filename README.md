@@ -182,9 +182,13 @@ mkdir -p .runtime
 discord-helper --config-dir "$PWD/.runtime/check/config" --data-dir "$PWD/.runtime/check/data" run --check
 ```
 
-테스트는 실제 SQLite, 명령 콜백, 설치 명령 생성/상태 읽기, 안전한 설정과 파일 잠금을 검증합니다. Discord HTTP/게이트웨이 및 systemctl 프로세스 호출 경계는 테스트 대역을 사용하며 이를 실서버 검증으로 부르지 않습니다. Linux에서는 생성 unit을 `systemd-analyze verify`로 검사합니다. CI는 Ubuntu Python 3.11/3.12에서 실행합니다.
+테스트는 실제 SQLite, 명령 콜백, 설치 명령 생성/상태 읽기, 안전한 설정과 파일 잠금을 검증합니다. 일반 단위 테스트는 Discord HTTP/게이트웨이 및 systemctl 호출에 대역을 사용합니다. Linux에서는 생성 unit을 `systemd-analyze verify`로 검사하고, CI 회귀 테스트는 Ubuntu Python 3.11/3.12에서 실행합니다.
 
-현재 개발 머신은 macOS이며 Docker/systemctl/codex를 PATH에서 찾지 못했습니다. 실제 Linux user manager에서의 start/stop, 실제 Discord 로그인·권한·출처 링크, 실제 Codex 로그인은 별도 운영 검증이 남아 있습니다. 봇 토큰/서버 대상이 제공되지 않았고 배포하지 않았습니다.
+별도 GitHub-hosted Ubuntu job은 일회용 비-root 계정과 **실제 user-systemd + 오프라인 fixture**로 install/start/status/restart/stop 및 정리를 검사합니다. 원래 unit은 유지하고 테스트용 drop-in만 fixture 실행으로 바꿉니다. 실패 복구 job은 실제 fixture 시작 뒤 원래 종료 코드 **73**과 stop 결과 assertion 실패를 주입합니다. unit/drop-in 삭제를 계속한 뒤 passwd 항목만 없고 소유 home/runtime이 남은 상황을 확인하고, 별도 `always()` 단계가 기록된 UID·경로 identity로 복구합니다. 의도적 실패 단계만 `continue-on-error`이며 마지막 단계가 원래 코드/실패 outcome·orphan 사전조건·복구 성공을 모두 요구합니다.
+
+`tests/run_systemd_ci.sh`와 root 전용 `tests/systemd_ci_owner.py`는 **폐기 가능한 GitHub-hosted VM 전용 테스트 도구**입니다. 운영자 정리 명령이 아닙니다. root-private 상태에는 useradd 이전 예약 UID/계정 표식과 생성 경로의 device/inode/owner를 저장합니다. 기존 계정/group/home/state, 재사용 UID, 바뀐 계정, 알 수 없거나 교체된 경로·symlink는 인수하지 않습니다. 계정 삭제는 `userdel --remove` 대신 계정과 검증된 경로를 분리하고, 성공 readback 뒤 상태도 제거합니다. 원래 실패 코드는 cleanup 오류가 덮어쓰지 않으며 정상 본문 뒤 cleanup만 실패해도 job은 실패합니다.
+
+이 검증은 **live bot readiness가 아닙니다**. Discord/Codex 인증·연결, 실제 봇 ExecStart/토큰 로딩, 부팅 지속성·enable/linger, 실서버 배포/비밀 복구는 검증하지 않았습니다. fixture의 AF_UNIX 제한이 dependency 설치를 포함한 CI 전체의 네트워크 격리를 뜻하지 않습니다. macOS에서는 실제 systemd 검증을 실행하지 않습니다. SIGKILL/VM 종료는 trap/always 실행을 보장하지 않으며, 경로 생성·chown과 identity 기록 사이에 중단되면 안전상 미확인 경로를 남겨 VM 폐기에 맡길 수 있습니다. 동시 악성 root 작업에 대한 보안 경계가 아니며 persistent/self-hosted runner에서 재사용하면 안 됩니다.
 
 ## 공개 서비스 이전의 차단 항목
 

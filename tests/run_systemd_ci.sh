@@ -5,58 +5,50 @@ set -euo pipefail
 [[ $(uname -s) == Linux && $(id -u) != 0 ]]
 user="dhci${GITHUB_RUN_ID:?}${GITHUB_RUN_ATTEMPT:?}"
 [[ "$user" =~ ^dhci[0-9]+$ && ${#user} -le 32 ]]
-if [[ ${1:-} != --cleanup ]] && id "$user" >/dev/null 2>&1; then
-  printf 'Refusing existing account: %s\n' "$user" >&2
-  exit 1
-fi
+mode=${1:-normal}
+[[ "$mode" == normal || "$mode" == --cleanup || "$mode" == --inject-failure ]]
 python=$(command -v python)
-uid=''
-created=false
+owner() {
+  sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT \
+    "$python" tests/systemd_ci_owner.py "$1"
+}
+if [[ "$mode" == --cleanup ]]; then
+  owner cleanup
+  exit 0
+fi
+# Refuse preexisting state before arming recovery; do not adopt another run.
+[[ ! -e "/run/$user.owned" && ! -L "/run/$user.owned" ]]
 cleanup() {
   result=$?
-  trap - EXIT
+  trap - EXIT INT TERM
   set +e
-  if [[ "$created" == true ]]; then
-    if [[ -n "$uid" ]]; then
-      sudo systemctl stop "user@${uid}.service"
-      sudo loginctl terminate-user "$user"
-      sudo systemctl stop "user-runtime-dir@${uid}.service"
-      manager_state=$(sudo systemctl show "user@${uid}.service" --property=ActiveState --value)
-      printf 'Manager cleanup state: %s\n' "$manager_state"
-      [[ "$manager_state" == inactive ]] || result=1
-    fi
-    sudo userdel --remove "$user"
-    if id "$user" >/dev/null 2>&1 || [[ -e "/home/$user" ]] || { [[ -n "$uid" ]] && [[ -e "/run/user/$uid" ]]; }; then
-      printf 'FAIL: disposable account/home/runtime cleanup incomplete\n' >&2
-      result=1
-    else
-      printf 'PASS: disposable manager/account/home/runtime removed (no linger enabled)\n'
-    fi
+  action=cleanup
+  if [[ "$mode" == --inject-failure && "$result" == 73 ]]; then
+    action=inject-orphan
   fi
+  owner "$action"
+  cleanup_result=$?
+  [[ "$action" != inject-orphan ]] || owner verify-orphan || cleanup_result=1
+  if [[ "$result" == 0 && "$cleanup_result" != 0 ]]; then result=$cleanup_result; fi
+  if [[ "$mode" == --inject-failure && "$cleanup_result" == 0 && "$result" == 73 ]]; then
+    printf 'orphan_verified=true\n' >> "${GITHUB_OUTPUT:?}"
+  fi
+  printf 'Harness exit status: %s (cleanup status: %s)\n' "$result" "$cleanup_result"
   exit "$result"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-if [[ ${1:-} == --cleanup ]]; then
-  if [[ -f "${RUNNER_TEMP:?}/$user.created" ]] && id "$user" >/dev/null 2>&1; then
-    created=true
-    uid=$(id -u "$user")
-  fi
-  exit 0
-fi
-sudo useradd --create-home --shell /bin/bash "$user"
-created=true
-touch "${RUNNER_TEMP:?}/$user.created"
-uid=$(id -u "$user")
+uid=$(owner prepare)
 # Do not relax runner workspace permissions for the disposable account.
 sudo install -o "$user" -g "$user" -m 600 tests/systemd_lifecycle.py tests/systemd_fixture.py "/home/$user/"
 # Explicit test-only manager; no reliance on runner login/DBus, no lingering.
 sudo systemctl start "user@${uid}.service"
+owner runtime
 sudo systemctl is-active "user@${uid}.service"
 sudo -u "$user" env -i \
   HOME="/home/$user" USER="$user" LOGNAME="$user" \
   PATH="$(dirname "$python"):/usr/bin:/bin" \
   XDG_RUNTIME_DIR="/run/user/$uid" \
   DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
-  "$python" "/home/$user/systemd_lifecycle.py"
+  "$python" "/home/$user/systemd_lifecycle.py" "$mode"
