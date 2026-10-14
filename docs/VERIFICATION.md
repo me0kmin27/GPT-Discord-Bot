@@ -9,7 +9,7 @@
 - `discord-helper doctor`: disabled-codex, credentials_present=False 확인.
 - `discord-helper ... run --check`: `Offline check OK: 6 commands; provider=disabled-codex; no network/login` 확인.
 
-초기 Ubuntu CI는 Git 제외 디렉터리 `.runtime`의 부모가 없는 상태에서 pytest `--basetemp`를 지정하여 실패했습니다. 로컬에서도 동일 오류를 재현했고 CI/문서에 `mkdir -p .runtime` 선행 단계를 추가했습니다. 최종 CI 성공은 최종 head에서 다시 확인해야 합니다.
+초기 Ubuntu CI는 Git 제외 디렉터리 `.runtime`의 부모가 없는 상태에서 pytest `--basetemp`를 지정하여 실패했습니다. 로컬에서도 동일 오류를 재현했고 CI/문서에 `mkdir -p .runtime` 선행 단계를 추가했습니다. 최종 CI 성공은 최종 head에서 다시 확인해야 합니다. 이후 실제 Linux unit 파서는 인용된 `WorkingDirectory`를 거절했습니다. 모든 앱 경로가 절대 경로이므로 불필요한 지시문을 제거했고, 공백/퍼센트/달러가 포함된 데이터 경로로 파서 회귀 검사를 강화했습니다.
 
 ## 테스트 경계
 

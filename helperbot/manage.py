@@ -49,7 +49,7 @@ def unit_text(paths):
     return MARKER + (
         '[Unit]\nDescription=Opt-in Discord knowledge helper (Codex disabled)\n'
         'After=network-online.target\n\n[Service]\nType=simple\n'
-        f'ExecStart={command}\nWorkingDirectory={unit_quote(paths.data)}\n'
+        f'ExecStart={command}\n'
         'UMask=0077\nNoNewPrivileges=true\nRestart=on-failure\nRestartSec=10\n'
         'TimeoutStopSec=30\n\n[Install]\nWantedBy=default.target\n')
 
