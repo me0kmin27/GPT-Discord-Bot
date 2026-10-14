@@ -45,6 +45,14 @@ def test_operator_options_are_narrow_and_validated(options, tmp_path):
         transport.CodexOAuthProvider(Path(sys.executable), tmp_path, options=options)
 
 
+def test_web_protocol_errors_retain_safe_diagnostic_categories(tmp_path):
+    from helperbot.inference_probe import safe_failure
+    client = transport.StdioClient((), cwd=tmp_path, env={}, web_search=True)
+    with pytest.raises(provider.ProviderUnavailable) as caught:
+        client.checked_item({'type': 'webSearch', 'id': 'sensitive'})
+    assert safe_failure(caught.value)['category'] == 'tool_item_rejected'
+
+
 def test_nonsecret_operator_example_is_valid(tmp_path):
     example = json.loads((Path(__file__).parents[1] / 'examples/runtime.codex-web-search.json').read_text())
     assert example['codex'] == {'web_search': 'live', 'model': 'gpt-6.1-sol',

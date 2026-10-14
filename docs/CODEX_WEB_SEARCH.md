@@ -128,7 +128,7 @@ hashes, read back only the three nonsecret Codex settings, and exercise a real
 weather/current-question turn and candidate persistence with the already
 operator-authorized app session. No live credentials or turns were used by this
 implementation worker. On failure restore the private source/config backup and
-restart; auth/DB are untouched. PR18 diagnostic tooling is a separate integration;
+restart; auth/DB are untouched. Merged PR18 diagnostic tooling is preserved;
 its direct provider construction must pass the runtime Codex options if used to
 reproduce this configured service behavior.
 

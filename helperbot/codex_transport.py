@@ -390,7 +390,7 @@ class StdioClient:
             if message['method'] in ('turn/started', 'turn/completed'):
                 turn = message['params'].get('turn')
                 if not isinstance(turn, dict) or not isinstance(turn.get('items'), list):
-                    raise ProviderUnavailable('Codex malformed turn')
+                    raise ProviderUnavailable('Codex malformed notification or request')
                 turn['items'] = [self.checked_item(item) for item in turn['items']]
             if message['method'] == 'configWarning':
                 self.configuration_warning = True
@@ -447,7 +447,7 @@ class StdioClient:
                         raise ValueError()
             return {'type': 'webSearch', 'id': item['id']}
         except (KeyError, TypeError, ValueError):
-            raise ProviderUnavailable('Codex tool or malformed item rejected') from None
+            raise ProviderUnavailable('Codex tool or unknown item rejected') from None
 
     async def rpc(self, method, params):
         self.sequence += 1
