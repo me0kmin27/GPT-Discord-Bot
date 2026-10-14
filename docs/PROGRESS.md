@@ -34,3 +34,15 @@
 - 단일 클라이언트/이벤트 루프의 in-memory 제한입니다. 고정 창 경계 burst, 재시작 초기화, 다중 서버 포화, 별도 부모 채널 공정성/분산 제한 부재를 명시합니다. 관리 명령/거절 안내 자체의 부하와 저장량·보존기간은 별도 후속 범위입니다.
 - 불필요한 지식 수집/공급자 구현/외부 서비스 의존성/DB schema 변경 없음. 원격에는 비밀 없는 소스·테스트·이 문서만 저장합니다.
 - **병합하지 않음**: 부모 에이전트의 독립 코드 검토 후 판단할 PR입니다.
+
+## 후속 PR: tenant stored-case capacity (2026-10-14)
+
+- 기반: PR #3 병합 `eaa39635fe7f553616140c6cccd0e2347eef1562`. 별도 `GPT-Discord-Bot-capacity` worktree / `feat/tenant-case-capacity` 브랜치. admission worktree는 변경하지 않았습니다.
+- 최소 설계: tenant `(guild, parent_channel)`별 candidate + confirmed **합계** 상한. 기본 1000, `HELPER_CASES_PER_TENANT`로 1–100000 설정. 상태별 별도 한도/예약/마이그레이션 없이 승격은 기존 행을 유지합니다.
+- 알려진 포화 상태는 공개 receipt와 admission 전에 거절. receipt 대기 중 경쟁은 `BEGIN IMMEDIATE`의 최종 활성 설정/합계 검사 및 사례+문맥 원자적 저장으로 차단. 예약이 아니므로 경쟁 중 이미 보낸 Discord embed는 되돌리지 않습니다.
+- 기존 초과 행 보존, 자동 retention sweep 없음. 개인정보/관리/gateway 삭제는 quota와 독립이며 삭제 후 용량 재사용 가능. `/reset`은 사례 용량을 반환하지 않습니다.
+- 물리 DB/디스크 상한이 아님: tenant 수 및 history 키 수 무제한, SQLite 페이지/저널/백업 별도. 자세한 한계와 운영 설정은 README에 명시했습니다.
+- RED→GREEN 실제 관찰: 한도 초과 후보가 저장됨(1 failed) → 트랜잭션 quota; 잘못된 설정 허용/오류 원문 노출(9 failed) → 엄격한 설정 검증; full tenant의 공개 receipt 조회 발생(1 failed) → preflight 연결.
+- 최종 로컬 전체: **175 passed, 1 skipped** (macOS Python 3.9.6, systemd parser 검사 skip). SQLite 동시 연결 Barrier 경쟁, rollback/lock 실패, lowered-limit 재시작, tenant/thread 격리, 삭제 후 재사용, 실제 callback receipt 경쟁/취소/정리와 기존 admission/privacy 회귀 포함.
+- `compileall`, `git diff --check`, CLI doctor 및 설정값 500의 `run --check` 성공: 6 commands, disabled-codex, no network/login, credentials_present=False.
+- 원격 최종 SHA/Ubuntu CI는 push 후 확인하고 PR/인계에 기록합니다. 이 문서가 CI 완료를 선행 주장하지 않습니다. 부모 독립 검토에 넘기며 **병합/배포하지 않습니다**. 인증 파일 접근, 공급자 활성화/유료 API 전환 없음.

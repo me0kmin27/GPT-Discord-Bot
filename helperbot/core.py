@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
+import os
 
 
 class Denied(ValueError):
@@ -37,6 +38,11 @@ class PendingOperation:
 
 class Store:
     def __init__(self, path):
+        raw = os.environ.get('HELPER_CASES_PER_TENANT', '1000')
+        if (not 1 <= len(raw) <= 6 or not raw.isascii() or not raw.isdecimal()
+                or not 1 <= int(raw) <= 100000):
+            raise ValueError('Invalid case capacity configuration')
+        self.cases_per_tenant = int(raw)
         path = Path(path).absolute()
         if any(p.is_symlink() for p in (path, *path.parents)):
             raise Denied("심볼릭 링크 데이터베이스 경로는 허용하지 않습니다.")
@@ -89,10 +95,21 @@ class Store:
             raise Denied("내용은 공백이 아닌 1~2000자여야 합니다.")
         return value.strip()
 
+    def check_capacity(self, s):
+        self.require_enabled(s)
+        count = self.db.execute(
+            "SELECT count(*) FROM cases WHERE guild=? AND channel=?", s.tenant).fetchone()[0]
+        if count >= self.cases_per_tenant:
+            raise Denied("채널 사례 저장 한도에 도달했습니다. /privacy_delete 또는 관리자 /forget으로 삭제 후 다시 시도하세요.")
+
     def candidate(self, s, question, message):
         self.require_enabled(s)
         question = self.text(question)
         with self.db:
+            # Serialize quota check + insert across connections. Never hold this
+            # transaction across Discord/provider awaits; no automatic eviction.
+            self.db.execute("BEGIN IMMEDIATE")
+            self.check_capacity(s)
             cur = self.db.execute(
                 "INSERT INTO cases (guild, channel, source_channel, author, question, question_message) VALUES (?,?,?,?,?,?)",
                 (*s.tenant, s.conversation, s.user, question, message))

@@ -122,6 +122,9 @@ def create_client(store, *, sync_guild=None):
             s = scope_for(i)
             store.require_enabled(s)
             question = store.text(question)
+            # Advisory preflight prevents known-full submissions becoming public.
+            # candidate() rechecks atomically after the receipt await.
+            store.check_capacity(s)
             with admission.request(s), store.operation(s, awaiting_receipt=True) as pending:
                 # Source IDs are real public bot receipts, not interaction IDs.
                 await i.response.send_message("처리 중 — 명시적으로 제출된 질문", embed=discord.Embed(title="질문 원문", description=safe_text(question)), allowed_mentions=NO_MENTIONS)
