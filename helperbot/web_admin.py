@@ -156,6 +156,11 @@ def create_app(paths, *, port=8765):
             raise ManagementError('대상 서버 ID를 확인하세요.')
         changes = {key: request.form.get(key, '') for key in ('model', 'model_reasoning_effort', 'web_search')}
         changes['sync_guild'] = guild
+        try:
+            for key in ('setup_timeout_seconds', 'generation_timeout_seconds'):
+                changes[key] = float(request.form.get(key, ''))
+        except ValueError:
+            raise ManagementError('제한 시간은 숫자로 입력하세요.') from None
         save_settings(paths, changes, request.form.get('revision'))
         return redirect(url_for('settings', saved='1'))
 

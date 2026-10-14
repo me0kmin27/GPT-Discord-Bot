@@ -1,5 +1,7 @@
 import re
 import pytest
+pytest.importorskip('flask')
+pytest.importorskip('flask_wtf')
 from test_settings_ops import paths_at
 
 
@@ -29,3 +31,11 @@ def test_real_login_csrf_and_authenticated_settings(tmp_path):
     assert client.get('/', base_url='http://evil.test:8765').status_code == 400
     assert client.post('/save', base_url=base, headers={'Origin': 'http://evil.test'},
                        data={'csrf_token': csrf(page)}).status_code == 400
+    from helperbot.settings_ops import read_settings
+    response = client.post('/save', base_url=base, headers={'Origin': base}, data={
+        'csrf_token': csrf(page), 'revision': read_settings(paths)['revision'],
+        'model': 'synthetic-model', 'model_reasoning_effort': 'low', 'web_search': 'live',
+        'scope': 'guild', 'sync_guild': '456', 'setup_timeout_seconds': '2.5',
+        'generation_timeout_seconds': '25'})
+    assert response.status_code == 302
+    assert read_settings(paths)['values']['setup_timeout_seconds'] == 2.5

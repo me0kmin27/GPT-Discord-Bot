@@ -11,7 +11,12 @@ import re
 from .manage import UNIT
 from .manage import ManagementError, runtime_config, validate_runtime_config, private_dir
 
-EDITABLE = ('model', 'model_reasoning_effort', 'web_search', 'sync_guild')
+from .codex_transport import DEFAULT_SETUP_TIMEOUT, DEFAULT_GENERATION_TIMEOUT
+
+EDITABLE = ('model', 'model_reasoning_effort', 'web_search', 'sync_guild',
+            'setup_timeout_seconds', 'generation_timeout_seconds')
+TIMEOUT_DEFAULTS = {'setup_timeout_seconds': DEFAULT_SETUP_TIMEOUT,
+                    'generation_timeout_seconds': DEFAULT_GENERATION_TIMEOUT}
 
 
 def service_status(*, runner=subprocess.run):
@@ -59,6 +64,7 @@ def read_settings(paths):
     options = config.get('codex', {})
     values = {key: options.get(key, '') for key in EDITABLE if key != 'sync_guild'}
     values['web_search'] = options.get('web_search', 'disabled')
+    values.update({key: options.get(key, default) for key, default in TIMEOUT_DEFAULTS.items()})
     values['sync_guild'] = config['sync_guild']
     return {'revision': revision(config), 'values': values,
             'provider': config['provider'], 'applied': None}

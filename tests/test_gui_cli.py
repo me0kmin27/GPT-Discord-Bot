@@ -13,4 +13,7 @@ def test_cli_uses_shared_settings_and_preserves_existing_commands(tmp_path, caps
     capsys.readouterr()
     assert manage.main(args+['doctor']) == 0
     assert 'provider=codex-oauth' in capsys.readouterr().out
-    assert manage.main(args+['gui', '--help']) is None
+    import pytest
+    with pytest.raises(SystemExit) as exc:
+        manage.main(args+['gui', '--help'])
+    assert exc.value.code == 0

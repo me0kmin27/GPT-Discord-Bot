@@ -46,3 +46,18 @@ def test_apply_requires_current_revision_and_explicit_confirmation(tmp_path):
     assert calls[0] == ['systemctl', '--user', 'restart', 'discord-helper.service']
     assert result['ActiveState'] == 'active'
     assert 'applied' not in result
+
+
+def test_timeout_defaults_and_validation_use_provider_contract(tmp_path):
+    from helperbot.settings_ops import read_settings, save_settings
+    from helperbot.codex_transport import DEFAULT_SETUP_TIMEOUT, DEFAULT_GENERATION_TIMEOUT
+    paths = paths_at(tmp_path)
+    shown = read_settings(paths)
+    assert shown['values']['setup_timeout_seconds'] == DEFAULT_SETUP_TIMEOUT
+    assert shown['values']['generation_timeout_seconds'] == DEFAULT_GENERATION_TIMEOUT
+    for value in (True, '3', float('nan'), float('inf'), 0, 31):
+        with pytest.raises(ManagementError):
+            save_settings(paths, {'setup_timeout_seconds': value}, shown['revision'])
+    saved = save_settings(paths, {'setup_timeout_seconds': 2.5, 'generation_timeout_seconds': 21}, shown['revision'])
+    assert saved['values']['setup_timeout_seconds'] == 2.5
+    assert saved['values']['generation_timeout_seconds'] == 21

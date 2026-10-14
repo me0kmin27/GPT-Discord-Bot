@@ -294,10 +294,54 @@ def main(argv=None):
     foreground.add_argument('--sync-guild', type=int)
     foreground.add_argument('--provider', choices=['disabled-codex', 'codex-oauth'], default=None)
     foreground.add_argument('--codex-executable', type=Path, help='Absolute pinned official native binary; default app-local install')
+    settings = subs.add_parser('settings', help='Shared CLI/Web GUI settings operations')
+    settings_sub = settings.add_subparsers(dest='settings_action', required=True)
+    settings_sub.add_parser('show')
+    update = settings_sub.add_parser('set')
+    update.add_argument('--revision', required=True, help='Revision from settings show (prevents stale writes)')
+    for field in ('model', 'model_reasoning_effort', 'web_search'):
+        update.add_argument('--'+field.replace('_', '-'), default=argparse.SUPPRESS)
+    update.add_argument('--sync-guild', type=int, default=argparse.SUPPRESS)
+    update.add_argument('--global-scope', action='store_true')
+    for field in ('setup_timeout_seconds', 'generation_timeout_seconds'):
+        update.add_argument('--'+field.replace('_', '-'), type=float, default=argparse.SUPPRESS)
+    apply = settings_sub.add_parser('apply')
+    apply.add_argument('--revision', required=True)
+    apply.add_argument('--confirm-restart', action='store_true')
+    gui = subs.add_parser('gui', help='Optional authenticated loopback Web GUI')
+    gui.add_argument('gui_action', choices=['setup', 'run', 'install', 'start', 'stop', 'status'])
+    gui.add_argument('--port', type=int, default=8765)
     args = parser.parse_args(argv)
     paths = Paths(args.config_dir.absolute(), args.data_dir.absolute(), args.unit_dir.absolute())
     try:
-        if args.command == 'setup':
+        if args.command == 'settings':
+            from .settings_ops import read_settings, save_settings, apply_settings, EDITABLE
+            if args.settings_action == 'show':
+                result = read_settings(paths)
+            elif args.settings_action == 'set':
+                changes = {key: getattr(args, key) for key in EDITABLE if hasattr(args, key)}
+                if args.global_scope:
+                    if 'sync_guild' in changes:
+                        raise ManagementError('Choose --sync-guild OR --global-scope.')
+                    changes['sync_guild'] = None
+                result = save_settings(paths, changes, args.revision)
+            else:
+                result = {'service': apply_settings(paths, args.revision, args.confirm_restart), 'applied': None}
+            print(json.dumps(result, ensure_ascii=True))
+        elif args.command == 'gui':
+            try:
+                from .web_admin import bootstrap_admin, serve
+                from .web_service import gui_service
+            except ImportError:
+                raise ManagementError('Optional Web GUI not installed: install this reviewed package with [web].') from None
+            if args.gui_action == 'setup':
+                bootstrap_admin(paths)
+                print('Private GUI administrator created; no bot credentials changed.')
+            elif args.gui_action == 'run':
+                serve(paths, port=args.port)
+            else:
+                return gui_service(paths, args.gui_action, port=args.port)
+        elif args.command == 'setup':
             setup(paths)
         elif args.command == 'install':
             install(paths)
