@@ -1,5 +1,13 @@
 # Codex login OAuth: 기술 연결과 공개 서비스 조건의 분리
 
+> **현재 구현 정정:** `codex-oauth`는 명시적 로컬 선택으로 실제 실행됩니다. 기본값만
+> `disabled-codex`이며 고정 readiness 거절/zero-tools 선행 조건은 제거했습니다.
+> 제한은 도구 영향을 줄일 뿐 도구 0개나 호스트 파일 읽기 격리를 보증하지 않습니다.
+> PR12의 생성 답변 영속 저장도 통합했습니다. 기존 아래 마일스톤 수치·고정 gate
+> 표현은 당시 기록이며 현재 계약은 [CODEX_TRANSPORT.md](CODEX_TRANSPORT.md)를 따릅니다.
+> 실제 앱 로그인/라이브 추론·공개 hosted 허가·배포는 수행하지 않았습니다.
+
+
 조회일: **2026-10-14 KST** (`date -Iseconds`: 2026-10-14T20:46:15+09:00).
 기준 소스: `me0kmin27/GPT-Discord-Bot` main `d244c360aa894cb0fc1f8269f5576b6c431e7595`.
 이 문서는 해당 기준의 조사 결과이며 이후 구현 PR의 상태를 대신하지 않는다.

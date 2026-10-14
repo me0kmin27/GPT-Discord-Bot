@@ -15,6 +15,7 @@ import fcntl
 from contextlib import contextmanager
 from .core import Store
 from .discord_app import create_client
+from .provider import build_provider
 
 
 class ManagementError(RuntimeError):
@@ -114,7 +115,8 @@ def install_codex(paths, *, runner=subprocess.run):
         raise ManagementError('Install Node.js/npm first, or install official Codex CLI separately')
     private_dir(paths.data)
     prefix = private_dir(paths.data / 'tools')
-    return runner([npm, 'install', '--prefix', str(prefix), '--no-audit', '--no-fund', '@openai/codex']).returncode
+    from .codex_transport import CODEX_VERSION
+    return runner([npm, 'install', '--prefix', str(prefix), '--no-audit', '--no-fund', '@openai/codex@' + CODEX_VERSION]).returncode
 
 
 def codex_login(paths, *, browser=False, runner=subprocess.run):
@@ -124,15 +126,18 @@ def codex_login(paths, *, browser=False, runner=subprocess.run):
     executable = str(local) if local.is_file() else shutil.which('codex')
     if not executable:
         raise ManagementError('Codex CLI not installed; run discord-helper install-codex first')
-    env = {key: os.environ[key] for key in ('PATH', 'HOME', 'LANG', 'TERM') if key in os.environ}
+    login_home = private_dir(paths.data / 'login-home')
+    env = {key: os.environ[key] for key in ('PATH', 'LANG', 'TERM') if key in os.environ}
+    env['HOME'] = str(login_home)
     env['CODEX_HOME'] = str(home)
-    command = [executable, '-c', 'cli_auth_credentials_store="file"', 'login']
+    command = [executable, '-c', 'cli_auth_credentials_store="file"',
+               '-c', 'forced_login_method="chatgpt"', 'login']
     if not browser:
         command.append('--device-auth')
     print('Official Codex login in isolated app home. Public live provider remains DISABLED.')
     old_mask = os.umask(0o077)
     try:
-        return runner(command, env=env).returncode
+        return runner(command, env=env, cwd=login_home).returncode
     finally:
         os.umask(old_mask)
 
@@ -211,15 +216,19 @@ def runtime_lock(paths):
         os.close(fd)
 
 
-def run(paths, *, check=False, sync_guild=None):
+def run(paths, *, check=False, sync_guild=None, provider_name='disabled-codex', codex_executable=None):
     os.umask(0o077)
+    try:
+        provider = build_provider(provider_name, data=paths.data, executable=codex_executable)
+    except ValueError as exc:
+        raise ManagementError(str(exc)) from None
     token = None if check else (os.environ.get('DISCORD_BOT_TOKEN') or load_token(paths))
     with runtime_lock(paths):
         store = Store(paths.data / 'state.db')
         try:
-            client = create_client(store, sync_guild=sync_guild)
+            client = create_client(store, sync_guild=sync_guild, provider=provider)
             if check:
-                print(f'Offline check OK: {len(client.tree.get_commands())} commands; provider=disabled-codex; no network/login')
+                print(f'Offline check OK: {len(client.tree.get_commands())} commands; provider={provider_name}; no network/login')
                 asyncio.run(client.close())
             else:
                 client.run(token, log_handler=None)
@@ -229,7 +238,7 @@ def run(paths, *, check=False, sync_guild=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog='discord-helper', description='Linux-first Discord helper; Codex live generation is disabled')
+    parser = argparse.ArgumentParser(prog='discord-helper', description='Discord helper; local Codex OAuth requires explicit selection')
     config_home = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config')))
     data_home = Path(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share')))
     parser.add_argument('--config-dir', type=Path, default=config_home / 'discord-helper')
@@ -243,6 +252,8 @@ def main(argv=None):
     foreground = subs.add_parser('run')
     foreground.add_argument('--check', action='store_true')
     foreground.add_argument('--sync-guild', type=int)
+    foreground.add_argument('--provider', choices=['disabled-codex', 'codex-oauth'], default='disabled-codex')
+    foreground.add_argument('--codex-executable', type=Path, help='Absolute pinned official native binary; default app-local install')
     args = parser.parse_args(argv)
     paths = Paths(args.config_dir.absolute(), args.data_dir.absolute(), args.unit_dir.absolute())
     try:
@@ -255,7 +266,8 @@ def main(argv=None):
         elif args.command == 'codex-login':
             return codex_login(paths, browser=args.browser)
         elif args.command == 'run':
-            return run(paths, check=args.check, sync_guild=args.sync_guild)
+            return run(paths, check=args.check, sync_guild=args.sync_guild,
+                       provider_name=args.provider, codex_executable=args.codex_executable)
         elif args.command == 'doctor':
             print(f'platform={platform.system()} python={platform.python_version()}')
             print('provider=disabled-codex (login does NOT enable public inference)')

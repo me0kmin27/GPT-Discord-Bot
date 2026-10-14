@@ -1,5 +1,13 @@
 # 릴리스 준비 체크리스트 — PR #2–#7 병합 후
 
+> **현재 구현 정정:** `codex-oauth`는 명시적 로컬 선택으로 실제 실행됩니다. 기본값만
+> `disabled-codex`이며 고정 readiness 거절/zero-tools 선행 조건은 제거했습니다.
+> 제한은 도구 영향을 줄일 뿐 도구 0개나 호스트 파일 읽기 격리를 보증하지 않습니다.
+> PR12의 생성 답변 영속 저장도 통합했습니다. 기존 아래 마일스톤 수치·고정 gate
+> 표현은 당시 기록이며 현재 계약은 [CODEX_TRANSPORT.md](CODEX_TRANSPORT.md)를 따릅니다.
+> 실제 앱 로그인/라이브 추론·공개 hosted 허가·배포는 수행하지 않았습니다.
+
+
 기준: `me0kmin27/GPT-Discord-Bot`의 `origin/main`
 `7f9f5ee6dd6b494ad2163b069e05a846d0c90061`. 이 문서는 **문서·테스트 전용 후속 PR**이며 배포 승인이 아니다.
 
@@ -12,7 +20,7 @@
 - **구현·오프라인 검증됨:** 빈 지식 → 명시적 질문 후보 → 사용자 확정 → 관련 사례/출처 조회 → 로컬 개인정보 삭제.
 - **CI fixture 검증됨:** Linux user-systemd 수명주기·실패 복구. 실제 봇 실행/Discord 연결은 아니다.
 - **live 미검증:** Discord 로그인·초대·명령 동기화·실권한·삭제 이벤트·출처 링크 접근, 대상 서버 배포·비밀 복구.
-- **transport 구현 / 활성화 차단:** 공식 Codex login OAuth stdio client와 bounded provider 경로를 구현하고 credential-free binary handshake 및 subprocess fixture로 검증한다. [구현 증거](CODEX_TRANSPORT.md)를 기준으로 확인한다. 무도구 강제 미검증으로 기본 DisabledCodex/고정 readiness gate를 유지한다. 실제 인증·추론·공개 hosted 허가·배포는 별도 gate이며 API 키/다른 인증으로 전환하지 않는다.
+- **transport 구현 / 로컬 명시적 선택 가능:** 공식 OAuth stdio, 제한된 실행 설정, 실제 signed-out `answer()` 및 저장/삭제 fixture 검증. [현재 계약](CODEX_TRANSPORT.md). 실제 인증·추론·공개 hosted 허가·배포는 별도이며 API 키로 전환하지 않는다.
 
 `구현됨`은 소스 존재, `오프라인 검증됨`은 실제 실행한 로컬 경계,
 `CI fixture 검증됨`은 아래 지정 환경만, `live 미검증`은 실제 운영 증거 없음,
@@ -28,7 +36,7 @@
 | 삭제 후 재노출 방지 | `Store.delete_user/delete_sources`, `operation`; `test_receipt_races.py`, `test_release_acceptance.py` | 로컬 DB 및 아직 제출하지 않은 응답 검증. 오프라인 이벤트 누락·이미 전송된 게시물·백업은 별도 |
 | 요청/저장 상한 | `admission.py`, `Store.check_capacity/candidate`; `test_admission*.py`, `test_capacity*.py` | 단일 프로세스 구현·오프라인 검증됨. 전체 디스크/tenant 수/history 키 수 상한은 아님 |
 | Linux 운영 CLI | `manage.py`; `test_manage*.py`, `test_systemd.py`, `systemd_lifecycle.py` | 오프라인 및 실제 CI fixture 검증됨. 실제 봇 ExecStart/토큰/재부팅·linger/복구는 미검증 |
-| API 키 없는 Codex 생성 | `codex_transport.py`, `DisabledCodex.answer`, `create_client`; `test_codex_*.py`, `probe_codex.py` | **transport 구현, live 활성화 차단**. 실제 signed-out handshake와 fixture 생성 경로 검증; 무도구·인증/실추론·호스팅 허가는 미충족 |
+| API 키 없는 Codex 생성 | `codex_transport.py`, `DisabledCodex.answer`, `create_client`; `test_codex_*.py`, `probe_codex.py` | **명시적 로컬 선택 가능**. 실제 signed-out answer와 fixture 생성·저장 경로 검증; 앱 로그인/실추론·호스팅 허가는 미충족 |
 
 ## 오래된 마일스톤 기록의 정정
 
@@ -112,7 +120,7 @@ B/C는 자동으로 시작할 기능 backlog가 아니다. 선택·정책 허가
 | Gate | 완료 판정 / 필요한 결정 | 지금 사용자 결정 없이 진행 가능한가 |
 |---|---|---|
 | G1 저장소 인계 | 이 docs/test PR 정확한 head의 전체 테스트·CI·독립 검토, 원격 head 일치. **이 작업은 병합하지 않음** | 테스트·CI·검토 가능. 완료 후 주변 기능 추가 대신 인계 |
-| G2 제품/공급자 | A/B/C 선택. B/C는 공식 허가·보안 계약·별도 구현 검토 없이는 생성 활성화 불가 | 선택 전 문서/기존 회귀 검증만 가능 |
+| G2 제품/공급자 | Codex login OAuth 확정. 로컬 선택 구현 완료; 별도 승인된 앱 로그인/실추론과 hosted 허가 확인 필요 | 로그인·배포 없이 구현·회귀 검증 가능 |
 | G3 Discord pilot | 앱/테스트 guild ID, 부모 텍스트 채널/공개 스레드, 관리자·일반·메시지관리 테스트 역할, 초대·명령 등록 권한 및 시험 동의 | 대상 지정/승인 필요. 토큰은 채팅에 받지 않음 |
 | G4 실행 대상 | Linux 호스트 식별, 전용 비-root 계정, Python/경로, 단일 인스턴스, foreground pilot 또는 user-systemd, 전역 sync 허용 여부, enable/linger 여부, 실행·중지 권한 | 대상·운영 변경 승인 필요. 현재 기본 unit은 guild-only sync 옵션 없음 |
 | G5 live acceptance | G3/G4 승인 후 아래 절차를 실제 실행하고 SHA/시간/비민감 결과 기록 | 대상 승인 전 실행 불가. disabled provider로도 가능 |

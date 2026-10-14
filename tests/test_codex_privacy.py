@@ -12,7 +12,6 @@ from helperbot.service import Service
 
 @pytest.mark.parametrize('action', ['delete_user', 'reset', 'disable', 'cancel'])
 async def test_late_protocol_completion_cannot_resurrect_deleted_data(tmp_path, monkeypatch, action):
-    monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
     fixture = Path(__file__).with_name('codex_protocol_fixture.py')
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
                         lambda self: (sys.executable, str(fixture)))
@@ -58,7 +57,6 @@ async def test_late_protocol_completion_cannot_resurrect_deleted_data(tmp_path, 
 
 async def test_no_match_generates_candidate_then_manual_resolution_is_retrieved(tmp_path, monkeypatch):
     """Product route with protocol fixture, NOT a claim of enabled live generation."""
-    monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
     fixture = Path(__file__).with_name('codex_protocol_fixture.py')
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
                         lambda self: (sys.executable, str(fixture)))

@@ -75,7 +75,9 @@ def test_codex_login_is_official_device_flow_with_isolated_home(tmp_path,monkeyp
     p=paths(tmp_path)
     assert m.codex_login(p,runner=runner)==0
     argv,kw=calls[0]
-    assert argv==['/usr/bin/codex','-c','cli_auth_credentials_store="file"','login','--device-auth']
+    assert argv==['/usr/bin/codex','-c','cli_auth_credentials_store="file"','-c','forced_login_method="chatgpt"','login','--device-auth']
+    assert kw['env']['HOME']==str(p.data/'login-home')
+    assert kw['cwd']==p.data/'login-home'
     assert kw['env']['CODEX_HOME']==str(p.data/'codex')
     assert 'OPENAI_API_KEY' not in kw['env']
     assert 'capture_output' not in kw
@@ -91,7 +93,7 @@ def test_codex_installer_uses_user_prefix_no_sudo_or_global_install(tmp_path,mon
         return SimpleNamespace(returncode=0)
     p=paths(tmp_path)
     assert m.install_codex(p,runner=runner)==0
-    assert calls[0]==['/usr/bin/npm','install','--prefix',str(p.data/'tools'),'--no-audit','--no-fund','@openai/codex']
+    assert calls[0]==['/usr/bin/npm','install','--prefix',str(p.data/'tools'),'--no-audit','--no-fund','@openai/codex@0.162.1']
     assert '-g' not in calls[0]
 
 

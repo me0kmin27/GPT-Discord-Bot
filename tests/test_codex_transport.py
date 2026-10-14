@@ -20,20 +20,40 @@ async def test_initialize_real_subprocess_and_reap(tmp_path):
     assert process.returncode is not None
 
 
-async def test_provider_security_gate_before_any_process_or_files(tmp_path):
+async def test_missing_executable_is_real_transport_error(tmp_path):
     from helperbot.codex_transport import CodexOAuthProvider
     adapter = CodexOAuthProvider(tmp_path / 'absent-binary', tmp_path / 'data')
-    with pytest.raises(provider.ProviderUnavailable, match='zero-tools'):
+    with pytest.raises(provider.ProviderUnavailable, match='transport unavailable'):
         await adapter.answer(provider.Request((1, 2), 'question', (), ()))
-    assert list(tmp_path.iterdir()) == []
+    assert not list((tmp_path / 'data').glob('request-*'))
 
 
-async def test_fresh_ephemeral_oauth_exchange_with_fixture_only(tmp_path, monkeypatch):
+def test_management_explicit_provider_is_wired(tmp_path, monkeypatch):
+    from helperbot import manage
+    from helperbot.codex_transport import CodexOAuthProvider
+    selected = []
+    class Client:
+        async def close(self):
+            pass
+        class tree:
+            @staticmethod
+            def get_commands():
+                return []
+    def create(store, **kwargs):
+        selected.append(kwargs['provider'])
+        return Client()
+    monkeypatch.setattr(manage, 'create_client', create)
+    paths = manage.Paths(tmp_path / 'config', tmp_path / 'data', tmp_path / 'units')
+    assert manage.run(paths, check=True, provider_name='codex-oauth',
+                      codex_executable=Path(sys.executable)) == 0
+    assert isinstance(selected[0], CodexOAuthProvider)
+
+
+@pytest.mark.parametrize('scenario', ['success', 'config_warning', 'turn_config_warning'])
+async def test_fresh_ephemeral_oauth_exchange_with_fixture_only(tmp_path, monkeypatch, scenario):
     from helperbot import codex_transport as transport
-    # Test-only removal of the fixed gate; no shipped option can do this.
-    monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
-                        lambda self: (sys.executable, str(FIXTURE)))
+                        lambda self: (sys.executable, str(FIXTURE), scenario))
     monkeypatch.setenv('OPENAI_API_KEY', 'synthetic-secret-not-forwarded')
     monkeypatch.setenv('DISCORD_BOT_TOKEN', 'synthetic-secret-not-forwarded')
     adapter = transport.CodexOAuthProvider(Path(sys.executable), tmp_path)
@@ -71,10 +91,9 @@ async def test_official_remote_disabled_notification(tmp_path):
 @pytest.mark.parametrize('scenario', ['tool_item', 'unknown_item', 'turn_approval',
     'wrong_thread', 'wrong_turn', 'bad_citation', 'bool_citation', 'invalid_output',
     'extra_output_field', 'excessive_output', 'stream_mismatch', 'no_final', 'failed_turn',
-    'signed_out', 'api_key', 'turn_config_warning'])
+    'signed_out', 'api_key', 'unsafe_config'])
 async def test_stream_contract_fail_closed(tmp_path, monkeypatch, scenario):
     from helperbot import codex_transport as transport
-    monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
                         lambda self: (sys.executable, str(FIXTURE), scenario))
     adapter = transport.CodexOAuthProvider(Path(sys.executable), tmp_path, timeout=2)
@@ -94,7 +113,6 @@ async def test_stream_contract_fail_closed(tmp_path, monkeypatch, scenario):
 async def test_request_limits_before_files_or_process(tmp_path, monkeypatch, changes):
     from dataclasses import replace
     from helperbot import codex_transport as transport
-    monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
     adapter = transport.CodexOAuthProvider(tmp_path / 'absent', tmp_path / 'data')
     request = replace(provider.Request((1, 2), 'q', (), ()), **changes)
     with pytest.raises(provider.ProviderUnavailable, match='request'):
@@ -204,13 +222,13 @@ async def test_cleanup_drains_saturated_stdout_after_kill(tmp_path):
     assert done and eof, 'cleanup left a paused stdout pipe open'
 
 
-async def test_config_warning_allows_diagnostics_but_blocks_thread(tmp_path, capsys):
+async def test_config_warning_is_sanitized_and_configuration_is_checked(tmp_path, capsys):
     from helperbot.codex_transport import StdioClient
     async with StdioClient((sys.executable, str(FIXTURE), 'config_warning'),
                            cwd=tmp_path, env={'CODEX_HOME': str(tmp_path)}) as client:
         await client.initialize()
         await client.rpc('account/read', {'refreshToken': False})
         assert client.configuration_warning is True
-        with pytest.raises(provider.ProviderUnavailable, match='configuration warning'):
-            await client.rpc('thread/start', {})
+        from helperbot.codex_transport import validate_config
+        validate_config((await client.rpc('config/read', {'includeLayers': False}))['config'])
     assert not capsys.readouterr().out

@@ -18,10 +18,12 @@ jobs:
           node-version: '22'
       - name: Install pinned official tooling locally (no login)
         run: npm ci --prefix tools/protocol --ignore-scripts --no-audit --no-fund
+      - run: python -m pip install .
       - name: Real signed-out schema and stdio handshake (not live AI)
         run: |
           mkdir -p .runtime
           python tests/probe_codex.py tools/protocol/node_modules .runtime
+          python tests/probe_codex_answer.py tools/protocol/node_modules .runtime
   systemd-lifecycle:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

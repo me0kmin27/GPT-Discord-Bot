@@ -1,7 +1,6 @@
-"""No live transport, credentials, shell, tools, or network access here.
+"""Provider contract and explicit opt-in local Codex OAuth factory.
 
-A future reviewed Codex adapter must enforce no-tools outside the prompt.
-The protocol deliberately separates instructions from untrusted case data.
+Instructions are separated from untrusted case data; not a sandbox guarantee.
 """
 from dataclasses import dataclass
 from typing import Protocol, Tuple
@@ -37,4 +36,23 @@ class Provider(Protocol):
 
 class DisabledCodex:
     async def answer(self, request: Request) -> ProviderReply:
-        raise ProviderUnavailable("Codex 실시간 생성 비활성: 안전한 연동 및 사용 조건 검증 대기")
+        raise ProviderUnavailable("Codex 실시간 생성 비활성: 운영자가 codex-oauth를 명시적으로 선택해야 합니다")
+
+
+def build_provider(name='disabled-codex', *, data=None, executable=None):
+    """Selection is operator-controlled, never enabled by finding credentials."""
+    if name == 'disabled-codex':
+        return DisabledCodex()
+    if name != 'codex-oauth' or data is None:
+        raise ValueError('Select disabled-codex or codex-oauth with an application data directory')
+    from pathlib import Path
+    from .codex_transport import CodexOAuthProvider
+    if executable is None:
+        matches = list((Path(data) / 'tools/node_modules').glob('@openai/codex-*/vendor/*/bin/codex'))
+        if len(matches) != 1:
+            raise ValueError('Install pinned official Codex in the application tools directory')
+        executable = matches[0]
+    executable = Path(executable)
+    if not executable.is_absolute() or not executable.is_file():
+        raise ValueError('Codex requires an absolute installed native executable path')
+    return CodexOAuthProvider(executable, Path(data))
