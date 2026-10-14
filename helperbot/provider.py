@@ -7,7 +7,9 @@ from typing import Protocol, Tuple
 
 
 class ProviderUnavailable(RuntimeError):
-    pass
+    def __init__(self, message, *, rpc_code=None):
+        super().__init__(message)
+        self.rpc_code = rpc_code if type(rpc_code) is int and -(2**31) <= rpc_code < 2**31 else None
 
 
 @dataclass(frozen=True)

@@ -358,8 +358,12 @@ class StdioClient:
                     raise ProviderUnavailable('Codex notification queue exceeded')
                 self.events.append(message)
                 continue
+            if type(message.get('id')) is int and message['id'] == self.sequence and 'error' in message:
+                error = message['error']
+                code = error.get('code') if isinstance(error, dict) else None
+                raise ProviderUnavailable('Codex protocol failure', rpc_code=code)
             if (type(message.get('id')) is not int or message['id'] != self.sequence
-                    or 'error' in message or not isinstance(message.get('result'), dict)):
+                    or not isinstance(message.get('result'), dict)):
                 raise ProviderUnavailable('Codex protocol failure')
             return message['result']
 
