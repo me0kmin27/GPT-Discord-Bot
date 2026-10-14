@@ -6,6 +6,7 @@ from .core import Scope, Denied
 from .admission import Admission, Limits
 from .provider import DisabledCodex
 from .service import Service
+from .diagnostics import StartupFailure
 
 
 NO_MENTIONS = discord.AllowedMentions.none()
@@ -86,13 +87,25 @@ class HelperClient(discord.Client):
     async def on_guild_remove(self, guild):
         self.store.delete_guild(guild.id)
 
+    async def login(self, token):
+        try:
+            await super().login(token)
+        except StartupFailure:
+            # setup_hook runs inside login; keep its more specific stage.
+            raise
+        except Exception as exc:
+            raise StartupFailure('discord_login', exc) from None
+
     async def setup_hook(self):
-        if self.sync_guild:
-            target = discord.Object(id=self.sync_guild)
-            self.tree.copy_global_to(guild=target)
-            await self.tree.sync(guild=target)
-        else:
-            await self.tree.sync()
+        try:
+            if self.sync_guild:
+                target = discord.Object(id=self.sync_guild)
+                self.tree.copy_global_to(guild=target)
+                await self.tree.sync(guild=target)
+            else:
+                await self.tree.sync()
+        except Exception as exc:
+            raise StartupFailure('guild_sync' if self.sync_guild else 'global_sync', exc) from None
 
 
 def create_client(store, *, sync_guild=None, provider=None):

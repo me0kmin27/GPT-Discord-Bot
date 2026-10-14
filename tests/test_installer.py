@@ -70,6 +70,10 @@ def test_interactive_finish_preserves_settings_and_stops_on_login_failure(tmp_pa
     b.finish(paths)
     assert (paths.config/'runtime.json').read_bytes() == before
     assert calls[-4:] == ['install', 'start', 'status', 'readback']
+    monkeypatch.setattr(m, 'lifecycle', lambda paths, action: 1)
+    with pytest.raises(b.InstallError, match='ExecMainStatus'):
+        b.finish(paths)
+    assert (paths.config/'runtime.json').read_bytes() == before
 
 
 def test_service_runtime_config_selects_provider_and_guild(tmp_path, monkeypatch):

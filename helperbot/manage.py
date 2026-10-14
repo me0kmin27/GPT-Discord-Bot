@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from .core import Store
 from .discord_app import create_client
 from .provider import build_provider
+from .diagnostics import StartupFailure, diagnostic
 
 
 class ManagementError(RuntimeError):
@@ -311,9 +312,12 @@ def main(argv=None):
     except (KeyboardInterrupt, EOFError):
         print('Cancelled; no credentials printed.', file=sys.stderr)
         return 130
-    except Exception:
-        # Third-party/network errors can contain credential material; no traceback.
-        print('Operation failed. Check local permissions/configuration/network; sensitive details suppressed.', file=sys.stderr)
+    except StartupFailure as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except Exception as exc:
+        # Third-party errors may contain secrets; allowlisted metadata only.
+        print(diagnostic('operation', exc), file=sys.stderr)
         return 1
 
 
