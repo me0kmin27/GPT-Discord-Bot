@@ -119,7 +119,8 @@ bash install.sh --help
 bash install.sh --prepare-only
 ```
 
-prepare-only는 실제 checkout/venv/패키지/Codex 설치와 offline DB schema 점검만 합니다.
+prepare-only는 실제 checkout/venv/패키지/Codex 설치와 **임시 DB**의 offline schema 점검만 합니다.
+실행 중인 서비스의 DB/잠금은 열지 않으므로 재실행해도 데이터는 보존합니다.
 **토큰 입력·OAuth·unit 설치·서비스 시작을 하지 않으며 NOT READY를 출력**합니다.
 완전 무인 OAuth 승인 우회 기능은 없습니다. CI는 깨끗한 Linux 임시 HOME에서 이 경로와
 반복 실행을 검증합니다. 별도 disposable user-systemd CI는 token/OAuth/Discord를

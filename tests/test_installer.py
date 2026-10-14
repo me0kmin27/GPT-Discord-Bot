@@ -64,7 +64,7 @@ def test_interactive_finish_preserves_settings_and_stops_on_login_failure(tmp_pa
     assert json.loads((paths.config/'runtime.json').read_text()) == {'provider': 'codex-oauth', 'sync_guild': 123}
     before = (paths.config/'runtime.json').read_bytes()
     monkeypatch.setattr(b, 'oauth_ready', lambda paths: True)
-    monkeypatch.setattr(m, 'run', lambda *a, **kw: 0)
+    monkeypatch.setattr(b, 'offline_check', lambda *a, **kw: None)
     monkeypatch.setattr(m, 'lifecycle', lambda paths, action: calls.append(action) or 0)
     monkeypatch.setattr(b, 'service_readback', lambda: calls.append('readback'))
     b.finish(paths)
@@ -115,6 +115,19 @@ def test_prepare_software_refuses_unowned_tools(tmp_path, monkeypatch):
     with pytest.raises(b.InstallError, match='tools'):
         b.prepare_software(tmp_path/'checkout', root)
     assert (tools/'precious').read_text() == 'keep'
+
+
+def test_installer_offline_check_does_not_open_live_database(tmp_path):
+    from helperbot import bootstrap as b
+    paths = m.Paths(tmp_path/'config', tmp_path/'data', tmp_path/'units')
+    native = paths.data/'tools/node_modules/@openai/codex-fixture/vendor/fixture/bin/codex'
+    native.parent.mkdir(parents=True)
+    native.write_text('fixture native discovery only')
+    database = paths.data/'state.db'
+    database.write_bytes(b'LIVE DB MUST NOT BE OPENED OR CHANGED')
+    with m.runtime_lock(paths):
+        b.offline_check(paths)
+    assert database.read_bytes() == b'LIVE DB MUST NOT BE OPENED OR CHANGED'
 
 
 def test_oauth_status_never_accepts_api_key_or_leaks_output(tmp_path, monkeypatch, capsys):

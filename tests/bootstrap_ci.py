@@ -1,5 +1,4 @@
 """Clean Linux bootstrap acceptance; no credentials, OAuth or Discord traffic."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -32,10 +31,12 @@ def main():
         assert not (home/'.config/discord-helper/credentials.json').exists()
         assert not (data/'codex/auth.json').exists()
         db = data/'state.db'
-        before = hashlib.sha256(db.read_bytes()).hexdigest()
+        assert not db.exists()  # schema check uses an isolated temporary DB
+        db.write_bytes(b'EXISTING OPERATOR DB FIXTURE - DO NOT OPEN')
+        before = db.read_bytes()
         stamp = (root/'software-ready').stat().st_mtime_ns
         run('bash', str(source/'install.sh'), '--prepare-only')
-        assert hashlib.sha256(db.read_bytes()).hexdigest() == before
+        assert db.read_bytes() == before
         assert (root/'software-ready').stat().st_mtime_ns == stamp
         run(cli, 'doctor')
         print('PASS: clean Linux checkout/venv/pinned Codex/offline schema + idempotent rerun. NOT live readiness.')

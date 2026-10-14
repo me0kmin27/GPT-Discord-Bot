@@ -122,6 +122,18 @@ def oauth_ready(paths):
     return result.returncode == 0 and 'Logged in using ChatGPT' in (result.stdout + result.stderr)
 
 
+def offline_check(paths):
+    """Check fresh schema/provider without opening a running service's database."""
+    from tempfile import TemporaryDirectory
+    from . import manage as m
+    provider = m.build_provider('codex-oauth', data=paths.data)
+    m.private_dir(paths.data)
+    with TemporaryDirectory(prefix='install-check-', dir=paths.data) as directory:
+        scratch = m.Paths(paths.config, Path(directory), paths.units)
+        if m.run(scratch, check=True, provider_name='codex-oauth', codex_executable=provider.executable):
+            raise InstallError('Offline configuration check failed; service NOT started.')
+
+
 def service_readback():
     # A process that survives this window is NOT proof of Discord readiness.
     before = command(['systemctl', '--user', 'show', 'discord-helper.service', '--property=MainPID', '--value'])
@@ -157,8 +169,7 @@ def finish(paths):
     if not oauth_ready(paths):
         if m.codex_login(paths) != 0 or not oauth_ready(paths):
             raise InstallError('OAuth not verified; service NOT started. Enable device login if required and rerun, or use codex-login --browser locally.')
-    if m.run(paths, check=True) != 0:
-        raise InstallError('Offline configuration check failed; service NOT started.')
+    offline_check(paths)
     m.install(paths)
     if m.lifecycle(paths, 'start') or m.lifecycle(paths, 'status'):
         raise InstallError('Service start/status failed. Saved configuration preserved; rerun after diagnosis.')
@@ -202,13 +213,15 @@ def prepare_software(checkout, root):
         raise InstallError('Incomplete venv preserved; inspect installation directory before retrying.')
     complete = safe_path(root/'software-ready')
     if not complete.exists():
-        command([python, '-m', 'pip', 'install', str(checkout)], cwd=root)
-        command([python, '-m', 'helperbot.manage', 'install-codex'], cwd=root)
-        command([python, '-m', 'pip', 'check'], cwd=root)
+        command([python, '-I', '-m', 'pip', 'install', str(checkout)], cwd=root)
+        command([python, '-I', '-m', 'helperbot.manage', 'install-codex'], cwd=root)
+        command([python, '-I', '-m', 'pip', 'check'], cwd=root)
         write_new(complete, 'software only; not authentication or service readiness\n')
-    command([python, '-m', 'pip', 'check'], cwd=root)
+    command([python, '-I', '-m', 'pip', 'check'], cwd=root)
+    if command([tools/'node_modules/.bin/codex', '--version'], cwd=root) != 'codex-cli 0.162.1':
+        raise InstallError('Application Codex version differs from pinned 0.162.1; not overwritten.')
     # Force the real selected provider's native-binary discovery; no fake auth.
-    command([python, '-m', 'helperbot.manage', 'run', '--check', '--provider', 'codex-oauth'], cwd=root)
+    command([python, '-I', '-c', 'from helperbot.bootstrap import offline_check, default_paths; offline_check(default_paths())'], cwd=root)
     return python
 
 
@@ -230,7 +243,7 @@ def main(argv=None):
             settings = json.loads((root/'tools-owner.json').read_text())
             config = Path(settings['config'])
             data = Path(settings['tools']).parent
-            cli = [str(python), '-m', 'helperbot.manage', '--config-dir', str(config),
+            cli = [str(python), '-I', '-m', 'helperbot.manage', '--config-dir', str(config),
                    '--data-dir', str(data), '--unit-dir', str(config.parent/'systemd/user')]
             text = '#!/bin/sh\nexec ' + ' '.join(shlex.quote(arg) for arg in cli) + ' "$@"\n'
             if not wrapper.exists():
@@ -241,7 +254,7 @@ def main(argv=None):
             if args.prepare_only:
                 print('PREPARED ONLY: no Discord token, OAuth login or service start performed. NOT READY. Rerun bash install.sh interactively.')
                 return 0
-            result = subprocess.run([str(python), '-c', 'from helperbot.bootstrap import installed_main; raise SystemExit(installed_main())'], cwd=root)
+            result = subprocess.run([str(python), '-I', '-c', 'from helperbot.bootstrap import installed_main; raise SystemExit(installed_main())'], cwd=root)
             return result.returncode
         finally:
             os.close(lock)

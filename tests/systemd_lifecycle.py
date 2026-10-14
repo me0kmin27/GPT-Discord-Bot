@@ -136,7 +136,7 @@ def main():
             assert (paths.config/'credentials.json').read_bytes() == saved
             assert (paths.config/'runtime.json').read_bytes() == settings
         assert manage.runtime_config(paths) == {'provider': 'codex-oauth', 'sync_guild': 123456789}
-        assert (paths.data/'state.db').is_file()
+        assert not (paths.data/'state.db').exists()  # fixture service does not open DB
         command(*cli, 'stop')
         print('PASS: installer finish/rerun + real systemd; token/OAuth/Discord are OFFLINE FIXTURES, NOT live readiness', flush=True)
     finally:
