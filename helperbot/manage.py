@@ -217,6 +217,23 @@ def runtime_lock(paths):
         os.close(fd)
 
 
+def validate_runtime_config(config):
+    """One schema for CLI, GUI, and bot startup; no credential discovery."""
+    if (not isinstance(config, dict)
+            or not {'provider', 'sync_guild'} <= set(config) <= {'provider', 'sync_guild', 'codex'}
+            or config['provider'] not in ('disabled-codex', 'codex-oauth')):
+        raise ValueError('Invalid runtime configuration')
+    if 'codex' in config:
+        from .codex_transport import validate_options
+        if not isinstance(config['codex'], dict):
+            raise ValueError('Invalid Codex configuration')
+        validate_options(config['codex'])
+    guild = config['sync_guild']
+    if guild is not None and (type(guild) is not int or not 0 < guild < 2**64):
+        raise ValueError('Invalid guild')
+    return config
+
+
 def runtime_config(paths):
     """A private, strictly validated operator selection, not credential discovery."""
     target = paths.config / 'runtime.json'
@@ -230,19 +247,7 @@ def runtime_config(paths):
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
                 raise ValueError()
             config = json.load(stream)
-        if (not isinstance(config, dict)
-                or not {'provider', 'sync_guild'} <= set(config) <= {'provider', 'sync_guild', 'codex'}
-                or config['provider'] not in ('disabled-codex', 'codex-oauth')):
-            raise ValueError()
-        if 'codex' in config:
-            from .codex_transport import validate_options
-            if not isinstance(config['codex'], dict):
-                raise ValueError()
-            validate_options(config['codex'])
-        guild = config['sync_guild']
-        if guild is not None and (type(guild) is not int or not 0 < guild < 2**64):
-            raise ValueError()
-        return config
+        return validate_runtime_config(config)
     except (OSError, ValueError, TypeError):
         raise ManagementError('Invalid runtime.json: require private provider and positive sync_guild (null means global)') from None
 
