@@ -1,4 +1,5 @@
 """Synchronous SQLite boundary; never accepts raw channel history."""
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
@@ -21,6 +22,17 @@ class Scope:
     @property
     def tenant(self):
         return (self.guild, self.channel)
+
+
+@dataclass(eq=False)
+class PendingOperation:
+    scope: Scope
+    awaiting_receipt: bool
+    cancelled: bool = False
+
+    def check(self):
+        if self.cancelled:
+            raise Denied("처리 중 설정/삭제가 변경되어 이전 응답을 폐기했습니다. 다시 질문하세요.")
 
 
 class Store:
@@ -49,7 +61,23 @@ class Store:
         )""")
         self.db.execute("CREATE INDEX IF NOT EXISTS turn_scope ON turns(guild, channel, conversation, user, id)")
         self.db.commit()
-        self.revision = 0
+        self._pending = set()
+
+    @contextmanager
+    def operation(self, s, *, awaiting_receipt=False):
+        # Single event-loop/process store: register before the first network await.
+        # Only active operations are retained, never permanent deletion tombstones.
+        operation = PendingOperation(s, awaiting_receipt)
+        self._pending.add(operation)
+        try:
+            yield operation
+        finally:
+            self._pending.discard(operation)
+
+    def _cancel(self, predicate):
+        for operation in self._pending:
+            if predicate(operation):
+                operation.cancelled = True
 
     def require_enabled(self, s):
         if not s.guild or s.bot or not self.enabled(s):
@@ -100,9 +128,10 @@ class Store:
 
     def reset(self, s):
         self.require_enabled(s)
+        self._cancel(lambda op: op.scope.tenant == s.tenant
+                     and op.scope.conversation == s.conversation and op.scope.user == s.user)
         with self.db:
             self.db.execute("DELETE FROM turns WHERE guild=? AND channel=? AND conversation=? AND user=?", (*s.tenant, s.conversation, s.user))
-        self.revision += 1
 
     def forget(self, s, case=None):
         if not s.guild or s.bot or not s.admin:
@@ -115,45 +144,53 @@ class Store:
                 if not cur.rowcount:
                     raise Denied("이 채널에 해당 사례가 없습니다.")
             self.db.execute("DELETE FROM turns WHERE guild=? AND channel=?", s.tenant)
-        self.revision += 1
+        self._cancel(lambda op: op.scope.tenant == s.tenant)
 
     def delete_user(self, s):
         if not s.guild or s.bot:
             raise Denied("서버의 사용자만 삭제할 수 있습니다.")
+        self._cancel(lambda op: op.scope.guild == s.guild and op.scope.user == s.user)
         with self.db:
+            affected = self.db.execute("SELECT DISTINCT channel FROM cases WHERE guild=? AND (author=? OR resolver=?)", (s.guild, s.user, s.user)).fetchall()
+            for row in affected:
+                self._cancel(lambda op: op.scope.tenant == (s.guild, row[0]))
             self.db.execute("DELETE FROM cases WHERE guild=? AND (author=? OR resolver=?)", (s.guild, s.user, s.user))
             self.db.execute("DELETE FROM turns WHERE guild=? AND user=?", (s.guild, s.user))
-        self.revision += 1
 
     def delete_sources(self, guild, channel, messages):
         # Gateway deletion metadata only: never fetch or ingest message content.
-        changed = False
         with self.db:
             for message in messages:
+                # The receipt ID may not have returned yet. Fail closed for active
+                # receipt submissions in this exact guild/conversation; unrelated
+                # tenants are unaffected and no message-ID tombstones are kept.
+                self._cancel(lambda op: op.awaiting_receipt
+                             and op.scope.guild == guild
+                             and op.scope.conversation == channel)
                 rows = self.db.execute("SELECT channel FROM cases WHERE guild=? AND ((source_channel=? AND question_message=?) OR (resolution_channel=? AND resolution_message=?))", (guild, channel, message, channel, message)).fetchall()
                 if rows:
-                    changed = True
                     self.db.execute("DELETE FROM cases WHERE guild=? AND ((source_channel=? AND question_message=?) OR (resolution_channel=? AND resolution_message=?))", (guild, channel, message, channel, message))
                     for row in rows:
+                        self._cancel(lambda op: op.scope.tenant == (guild, row[0]))
                         self.db.execute("DELETE FROM turns WHERE guild=? AND channel=?", (guild, row[0]))
-        if changed:
-            self.revision += 1
 
     def delete_channel(self, guild, channel):
+        self._cancel(lambda op: op.scope.guild == guild
+                     and channel in (op.scope.channel, op.scope.conversation))
         with self.db:
             parents = self.db.execute("SELECT DISTINCT channel FROM cases WHERE guild=? AND (channel=? OR source_channel=? OR resolution_channel=?)", (guild, channel, channel, channel)).fetchall()
             self.db.execute("DELETE FROM cases WHERE guild=? AND (channel=? OR source_channel=? OR resolution_channel=?)", (guild, channel, channel, channel))
             self.db.execute("DELETE FROM channels WHERE guild=? AND channel=?", (guild, channel))
             self.db.execute("DELETE FROM turns WHERE guild=? AND (channel=? OR conversation=?)", (guild, channel, channel))
             for row in parents:
+                self._cancel(lambda op: op.scope.tenant == (guild, row[0]))
                 self.db.execute("DELETE FROM turns WHERE guild=? AND channel=?", (guild, row[0]))
-        self.revision += 1
 
     def delete_guild(self, guild):
+        self._cancel(lambda op: op.scope.guild == guild)
         with self.db:
             for table in ('channels', 'cases', 'turns'):
                 self.db.execute(f"DELETE FROM {table} WHERE guild=?", (guild,))
-        self.revision += 1
 
     def close(self):
         self.db.close()
@@ -164,6 +201,7 @@ class Store:
     def configure(self, s, enabled):
         if not s.admin or s.bot or not s.guild:
             raise Denied("서버 관리자만 채널 설정을 변경할 수 있습니다.")
+        self._cancel(lambda op: op.scope.tenant == s.tenant)
         with self.db:
             if enabled:
                 self.db.execute("INSERT OR IGNORE INTO channels VALUES (?, ?)", s.tenant)
@@ -171,4 +209,3 @@ class Store:
                 self.db.execute("DELETE FROM channels WHERE guild=? AND channel=?", s.tenant)
                 self.db.execute("DELETE FROM cases WHERE guild=? AND channel=?", s.tenant)
                 self.db.execute("DELETE FROM turns WHERE guild=? AND channel=?", s.tenant)
-        self.revision += 1

@@ -1,7 +1,6 @@
 """Application service. No generated output is promoted into knowledge."""
 import asyncio
 from dataclasses import dataclass
-from .core import Denied
 from .provider import Request, ProviderUnavailable, DisabledCodex
 
 
@@ -25,13 +24,16 @@ class Service:
         self.timeout = timeout
 
     async def ask(self, s, question, source_message):
+        with self.store.operation(s) as pending:
+            return await self._ask(s, question, source_message, pending)
+
+    async def _ask(self, s, question, source_message, pending):
         self.store.require_enabled(s)
         question = self.store.text(question)
         history = tuple(self.store.history(s))
         case = self.store.candidate(s, question, source_message)
         # Latest bounded confirmed cases; not semantic relevance or pretrained data.
         evidence = tuple(self.store.knowledge(s)[:3])
-        revision = self.store.revision
         try:
             reply = await asyncio.wait_for(
                 self.provider.answer(Request(s.tenant, question, history, evidence)), self.timeout)
@@ -56,6 +58,5 @@ class Service:
         except Exception:
             # Do not return provider exception strings: they can contain secrets.
             body = "공급자 오류: 생성 답변을 제공하지 않았습니다."
-        if revision != self.store.revision:
-            raise Denied("처리 중 설정/삭제가 변경되어 이전 응답을 폐기했습니다. 다시 질문하세요.")
+        pending.check()
         return Answer(case, f"후보 사례 #{case} (자동 학습 아님)\n{body}", evidence)

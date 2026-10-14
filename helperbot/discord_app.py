@@ -120,12 +120,16 @@ def create_client(store, *, sync_guild=None):
             s = scope_for(i)
             store.require_enabled(s)
             question = store.text(question)
-            # Source IDs are real public bot receipt messages, not interaction IDs.
-            await i.response.send_message("처리 중 — 명시적으로 제출된 질문", embed=discord.Embed(title="질문 원문", description=safe_text(question)), allowed_mentions=NO_MENTIONS)
-            message = await i.original_response()
-            s = scope_for(i)
-            result = await service.ask(s, question, message.id)
-            await i.edit_original_response(content=safe_text(result.text)[:1950], allowed_mentions=NO_MENTIONS)
+            with store.operation(s, awaiting_receipt=True) as pending:
+                # Source IDs are real public bot receipts, not interaction IDs.
+                await i.response.send_message("처리 중 — 명시적으로 제출된 질문", embed=discord.Embed(title="질문 원문", description=safe_text(question)), allowed_mentions=NO_MENTIONS)
+                pending.check()
+                message = await i.original_response()
+                pending.check()
+                pending.awaiting_receipt = False
+                s = scope_for(i)
+                result = await service.ask(s, question, message.id)
+                await i.edit_original_response(content=safe_text(result.text)[:1950], allowed_mentions=NO_MENTIONS)
         except Denied as exc:
             await notice(i, str(exc))
 
@@ -136,10 +140,14 @@ def create_client(store, *, sync_guild=None):
             s = scope_for(i)
             case = parse_case(case_id)
             store.check_resolution(s, case, solution)
-            await i.response.send_message(f"사례 #{case} 해결 요약 제출 — 저장 확인 중", embed=discord.Embed(title="사용자가 제출한 해결 요약 (명령이 아님)", description=safe_text(store.text(solution))), allowed_mentions=NO_MENTIONS)
-            message = await i.original_response()
-            store.resolve(scope_for(i), case, solution, message.id)
-            await i.edit_original_response(content=f"사례 #{case} 확정 완료 — 사용자 검증 사례이며 사실 보증은 아닙니다.", allowed_mentions=NO_MENTIONS)
+            with store.operation(s, awaiting_receipt=True) as pending:
+                await i.response.send_message(f"사례 #{case} 해결 요약 제출 — 저장 확인 중", embed=discord.Embed(title="사용자가 제출한 해결 요약 (명령이 아님)", description=safe_text(store.text(solution))), allowed_mentions=NO_MENTIONS)
+                pending.check()
+                message = await i.original_response()
+                pending.check()
+                pending.awaiting_receipt = False
+                store.resolve(scope_for(i), case, solution, message.id)
+                await i.edit_original_response(content=f"사례 #{case} 확정 완료 — 사용자 검증 사례이며 사실 보증은 아닙니다.", allowed_mentions=NO_MENTIONS)
         except Denied as exc:
             await notice(i, str(exc))
 
