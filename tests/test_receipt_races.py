@@ -141,11 +141,13 @@ async def test_deletion_during_service_is_scoped_and_suppresses_stale_output(sto
     import asyncio
     from helperbot.provider import DisabledCodex
     deletion_finished = asyncio.Event()
+    retrieved = []
 
     class GatedDisabledCodex(DisabledCodex):
         async def answer(self, request):
             # Supplementary service-await coverage needs a real suspension:
             # an immediately failing disabled provider need not yield on 3.12.
+            retrieved.extend(item['id'] for item in request.evidence)
             await deletion_finished.wait()
             return await super().answer(request)
 
@@ -186,6 +188,7 @@ async def test_deletion_during_service_is_scoped_and_suppresses_stale_output(sto
     i.response.is_done = lambda: True
     await client.tree.get_command('ask').callback(i, question='new question')
     await asyncio.gather(*tasks)
+    assert retrieved == [evidence]
     if event.startswith('other'):
         i.edit_original_response.assert_awaited_once()
     else:

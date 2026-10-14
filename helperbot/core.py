@@ -4,6 +4,21 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 import os
+import re
+import unicodedata
+
+
+SEARCH_WINDOW = 1000
+SEARCH_RESULTS = 3
+
+
+def lexical_features(text):
+    """Unique words + Hangul syllable bigrams, not a morphological analyzer."""
+    text = unicodedata.normalize('NFKC', text).casefold()
+    features = {('word', word) for word in re.findall(r'[^\W_]+', text)}
+    for run in re.findall(r'[가-힣]+', text):
+        features.update(('hangul', run[i:i + 2]) for i in range(len(run) - 1))
+    return features
 
 
 class Denied(ValueError):
@@ -136,6 +151,25 @@ class Store:
         if not s.guild or s.bot or not self.enabled(s):
             return []
         return [dict(r) for r in self.db.execute("SELECT * FROM cases WHERE guild=? AND channel=? AND status='confirmed' ORDER BY id DESC LIMIT 20", s.tenant)]
+
+    def search_knowledge(self, s, question):
+        """Rank a fixed tenant-local window; never fall back to unrelated rows."""
+        if not s.guild or s.bot or not self.enabled(s):
+            return []
+        query = lexical_features(self.text(question))
+        if not query:
+            return []
+        rows = self.db.execute(
+            "SELECT * FROM cases WHERE guild=? AND channel=? AND status='confirmed' "
+            "ORDER BY id DESC LIMIT ?", (*s.tenant, SEARCH_WINDOW))
+        ranked = []
+        for row in rows:
+            features = lexical_features(row['question']) | lexical_features(row['solution'])
+            score = len(query & features)
+            if score:
+                ranked.append((score, row['id'], dict(row)))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [item[2] for item in ranked[:SEARCH_RESULTS]]
 
     def history(self, s):
         if not s.guild or s.bot or not self.enabled(s):
