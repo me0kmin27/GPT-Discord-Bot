@@ -70,13 +70,17 @@ class Store:
             self.db.execute("DELETE FROM turns WHERE guild=? AND channel=? AND conversation=? AND user=? AND id NOT IN (SELECT id FROM turns WHERE guild=? AND channel=? AND conversation=? AND user=? ORDER BY id DESC LIMIT 8)", (*key, *key))
         return cur.lastrowid
 
-    def resolve(self, s, case, solution, message):
+    def check_resolution(self, s, case, solution):
         self.require_enabled(s)
-        solution = self.text(solution)
+        self.text(solution)
+        row = self.db.execute("SELECT * FROM cases WHERE guild=? AND channel=? AND id=?", (*s.tenant, case)).fetchone()
+        if not row or row['status'] != 'candidate' or (row['author'] != s.user and not s.moderator):
+            raise Denied("후보 사례의 질문자 또는 이 채널의 메시지 관리 권한자만 확정할 수 있습니다.")
+
+    def resolve(self, s, case, solution, message):
         with self.db:
-            row = self.db.execute("SELECT * FROM cases WHERE guild=? AND channel=? AND id=?", (*s.tenant, case)).fetchone()
-            if not row or row['status'] != 'candidate' or (row['author'] != s.user and not s.moderator):
-                raise Denied("후보 사례의 질문자 또는 이 채널의 메시지 관리 권한자만 확정할 수 있습니다.")
+            self.check_resolution(s, case, solution)
+            solution = self.text(solution)
             self.db.execute("UPDATE cases SET status='confirmed', solution=?, resolver=?, resolution_channel=?, resolution_message=? WHERE guild=? AND channel=? AND id=?",
                             (solution, s.user, s.conversation, message, *s.tenant, case))
 
@@ -116,6 +120,36 @@ class Store:
         with self.db:
             self.db.execute("DELETE FROM cases WHERE guild=? AND (author=? OR resolver=?)", (s.guild, s.user, s.user))
             self.db.execute("DELETE FROM turns WHERE guild=? AND user=?", (s.guild, s.user))
+        self.revision += 1
+
+    def delete_sources(self, guild, channel, messages):
+        # Gateway deletion metadata only: never fetch or ingest message content.
+        changed = False
+        with self.db:
+            for message in messages:
+                rows = self.db.execute("SELECT channel FROM cases WHERE guild=? AND ((source_channel=? AND question_message=?) OR (resolution_channel=? AND resolution_message=?))", (guild, channel, message, channel, message)).fetchall()
+                if rows:
+                    changed = True
+                    self.db.execute("DELETE FROM cases WHERE guild=? AND ((source_channel=? AND question_message=?) OR (resolution_channel=? AND resolution_message=?))", (guild, channel, message, channel, message))
+                    for row in rows:
+                        self.db.execute("DELETE FROM turns WHERE guild=? AND channel=?", (guild, row[0]))
+        if changed:
+            self.revision += 1
+
+    def delete_channel(self, guild, channel):
+        with self.db:
+            parents = self.db.execute("SELECT DISTINCT channel FROM cases WHERE guild=? AND (channel=? OR source_channel=? OR resolution_channel=?)", (guild, channel, channel, channel)).fetchall()
+            self.db.execute("DELETE FROM cases WHERE guild=? AND (channel=? OR source_channel=? OR resolution_channel=?)", (guild, channel, channel, channel))
+            self.db.execute("DELETE FROM channels WHERE guild=? AND channel=?", (guild, channel))
+            self.db.execute("DELETE FROM turns WHERE guild=? AND (channel=? OR conversation=?)", (guild, channel, channel))
+            for row in parents:
+                self.db.execute("DELETE FROM turns WHERE guild=? AND channel=?", (guild, row[0]))
+        self.revision += 1
+
+    def delete_guild(self, guild):
+        with self.db:
+            for table in ('channels', 'cases', 'turns'):
+                self.db.execute(f"DELETE FROM {table} WHERE guild=?", (guild,))
         self.revision += 1
 
     def close(self):
