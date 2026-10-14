@@ -85,52 +85,82 @@ Generated text remains a candidate until explicit human resolution.
 
 ## Parent-operated minimal apply / rollback
 
-This branch contains the merged PR17 warning validation and sanitization. The
-minimal deployment delta from that base changes exactly:
+The three-module **PR source delta** is relative to main `5687dfe1` (PR17 and
+PR18), not the installed `f1c0957` baseline. It changes:
 
 - `helperbot/codex_transport.py`
 - `helperbot/provider.py`
 - `helperbot/manage.py`
 
-Do not blindly `git apply` over the installed transport's in-file model/effort
-hotfix. First migrate those nonsecret settings into runtime.json as above,
-retaining the actual guild. Stage the exact reviewed files and back up only the
-three existing source files and private runtime config. The staged transport
-contains PR17's warning shape/scope validation; it must replace, not erase, that
-compatibility fix. Keep backups private. Never touch the Codex home/auth or DB.
+For the supplied installed `f1c0957` plus warning/model hotfixes, the minimum
+reviewed replacement manifest is **four modules**: those three plus
+`helperbot/diagnostics.py`. New `manage.py` imports that module; the old baseline
+has no such file. `helperbot/async_utils.py` already exists and is byte-identical
+to the reviewed source at that baseline. Verify this against the actual installed
+files and dependencies rather than assuming that local drift matches Git.
 
-For a **clean PR17 source checkout**, the generated code-only artifact can be
-checked/applied with:
+Do not blindly apply a three-file patch or rerun the installer. Parent must:
+
+1. Reconcile the actual imported app directory and installed Python with the
+   supplied baseline. Stage all four exact-reviewed modules into a disposable
+   reconstruction of that baseline and inspect local hotfix drift. If the baseline
+   or dependencies differ, stop and review the complete replacement package.
+2. Prepare a private runtime config preserving actual `provider` and `sync_guild`;
+   migrate the in-file model/effort overrides to `gpt-6.1-sol` / `low`, with explicit
+   `web_search: live`. Never substitute the example's null guild. Review this
+   prepared config before live installation. Preserve the integrated warning fix.
+3. Before replacement, stop the service and privately back up every replaced file
+   and runtime.json, recording whether each file originally existed. The manifest
+   includes diagnostics.py even when it is newly added. Keep source and config
+   backups paired, mode 600 for config, with unchanged ownership.
+4. Copy the four exact modules only after prerequisite review. Compare installed
+   hashes to staged hashes and verify the actual imported module paths. Do not
+   read/copy/change credentials, Codex auth/home, or the active database.
+5. Run imports and offline checks using installed Python but **isolated temporary
+   config/data/unit paths**, then restart only after they pass. Bare `run --check`
+   opens Store on the configured database; it is NOT a read-only live DB check.
+
+Staging from the fetched, exact-reviewed head (not a live installation command):
 
 ```sh
-git apply --check /path/to/codex-web-search-minimal.patch
-git apply /path/to/codex-web-search-minimal.patch
-```
-
-For an installed source tree with known local hotfixes, parent can stage reviewed
-modules from the fetched exact head before replacing those three paths:
-
-```sh
-# In the fetched repository, after verifying HEAD equals the reviewed PR head:
+umask 077
 stage=$(mktemp -d "$HOME/.cache/codex-web-stage.XXXXXX")
-git archive HEAD helperbot/codex_transport.py helperbot/provider.py helperbot/manage.py |
-  tar -x -C "$stage"
-# Stop the user service, back up the three installed files/config, then copy
-# these exact modules to the actual imported app directory. Do not rerun installer.
-# Add codex settings to existing runtime.json, preserving sync_guild and mode 600.
-# Run installed Python's offline management check before restarting:
-# <installed-python> -m helperbot.manage run --check
-# systemctl --user restart discord-helper.service
+git archive HEAD helperbot/codex_transport.py helperbot/provider.py \
+  helperbot/manage.py helperbot/diagnostics.py | tar -x -C "$stage"
 ```
 
-Parent must verify the actual imported module path, compare staged/installed file
-hashes, read back only the three nonsecret Codex settings, and exercise a real
-weather/current-question turn and candidate persistence with the already
-operator-authorized app session. No live credentials or turns were used by this
-implementation worker. On failure restore the private source/config backup and
-restart; auth/DB are untouched. Merged PR18 diagnostic tooling is preserved;
-its direct provider construction must pass the runtime Codex options if used to
-reproduce this configured service behavior.
+For the isolated check, create another private temporary directory, put only the
+reviewed nonsecret runtime.json into its `config` directory (mode 600), and use
+all three explicit paths. Run from the reconstructed/staged full app directory,
+not the repository checkout, and verify imports resolve there:
+
+```sh
+# probe is a new private temporary directory, NOT the active runtime directory.
+# installed_python is the verified installed venv interpreter.
+"$installed_python" -m helperbot.manage \
+  --config-dir "$probe/config" --data-dir "$probe/data" \
+  --unit-dir "$probe/units" run --check
+```
+
+The temporary data directory may need a reference to the verified installed Codex
+executable under `tools/node_modules/.bin/codex` (or its directory on PATH);
+never point the probe data path at the live data directory to satisfy discovery.
+This check does not authenticate or prove model/search availability.
+
+On failure, keep the service stopped while restoring **both source and the old
+runtime.json** before restarting: the old parser rejects the new `codex` key.
+Remove newly added diagnostics.py if absent in the recorded pre-install state;
+restore existing files otherwise. Verify restored hashes/config before restart.
+Auth and DB stay untouched. A four-module mixed-version overlay does **not**
+install full PR18 diagnostics: old service.py/discord_app.py remain unchanged.
+Do not claim full-tree runtime parity. Direct diagnostic provider construction
+must pass runtime Codex options explicitly.
+
+Parent alone operates the live session. After successful staging/installation,
+read back only nonsecret option values and guild preservation, verify stable
+service status (including restart count), and exercise an operator-authorized
+current/weather turn with candidate persistence. No live credentials, service
+operations, or turns were used by this implementation worker.
 
 ## Verification scope
 
@@ -140,6 +170,28 @@ server-request rejection, source limits, empty evidence generation/storage,
 no-source and failed-search fallbacks, cancellation and privacy deletion/reset/
 disable races. Existing signed-out/protocol/frame bounds remain tested.
 
-Tests are synthetic, **not live weather/search accuracy evidence**. GitHub source
-implements the requested selections; actual runtime parity requires parent
-application of the three modules and runtime settings, plus live verification.
+### Reconstructed-baseline deployment evidence
+
+The documentation correction was checked against production source at
+`b2dd5c292e4e9772653a6b4acff1681cdafdc654`; production source is unchanged by
+this correction. A disposable `git archive f1c0957` reconstruction was overlaid
+with exact reviewed modules using Python 3.9.6 and installed test dependencies:
+
+- Three modules: import failed with `ModuleNotFoundError: helperbot.diagnostics`.
+- Four modules (including diagnostics.py): imports passed, exit 0.
+- Baseline async_utils.py compared byte-for-byte equal to reviewed source.
+- Four-module `run(Paths(...), check=True, codex_executable=...)`: exit 0 for
+  both legacy provider/guild config and the new Codex config. Each used private
+  scratch config/data/units, never the active database. The executable argument
+  was the test Python interpreter, a deliberate executable-discovery fixture;
+  this did not execute Codex or prove authentication.
+- Synthetic guild `123`, model `gpt-6.1-sol`, effort `low`, and search `live`
+  round-tripped unchanged. Actual installed hotfix drift was not inspected.
+
+This is explicit one-off reconstruction evidence, not a new automated CI test;
+normal shallow CI checkouts do not supply the historical baseline. The existing
+full-tree suite does not by itself validate mixed-version deployment.
+
+Tests are synthetic, **not live weather/search accuracy evidence**. Applying the
+four-module overlay and reviewed runtime settings still requires parent-only
+live verification; it does not establish full source/runtime parity.
