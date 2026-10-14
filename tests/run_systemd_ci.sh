@@ -21,6 +21,9 @@ cleanup() {
       sudo systemctl stop "user@${uid}.service"
       sudo loginctl terminate-user "$user"
       sudo systemctl stop "user-runtime-dir@${uid}.service"
+      manager_state=$(sudo systemctl show "user@${uid}.service" --property=ActiveState --value)
+      printf 'Manager cleanup state: %s\n' "$manager_state"
+      [[ "$manager_state" == inactive ]] || result=1
     fi
     sudo userdel --remove "$user"
     if id "$user" >/dev/null 2>&1 || [[ -e "/home/$user" ]] || { [[ -n "$uid" ]] && [[ -e "/run/user/$uid" ]]; }; then

@@ -2,6 +2,8 @@
 
 ## 후속 PR: 실제 Linux 사용자 systemd lifecycle
 
+- 실제 Linux 코드 head `b292dd73579bbef16f27bd347e691913e7ae2553` / run `38551300056` 성공: PID 교체/종료, inactive 상태, unit 및 일회용 계정 정리 로그 확인. 최종 문서 head CI는 재확인 후 PR 인계. 상세 실패 원인/경계는 VERIFICATION 참조.
+
 - 기반 PR #4 `18e0fbc6ea06ece4042ef7a6120ad81c5abffbb1`; 별도 `GPT-Discord-Bot-systemd` worktree/`ci/linux-user-service`. 기존 worktree 보존.
 - production Python/CLI/unit 기본값 변경 없음. 테스트 전용 executable/drop-in으로 Discord 실행만 대체하고 실제 설치 console CLI와 실제 systemctl/user manager를 실행합니다.
 - GitHub-hosted Ubuntu 24.04에 일회용 비-root 계정/user manager를 생성합니다. linger/enable 없이 종료 trap과 `always()` cleanup으로 manager/계정/home/runtime을 제거합니다. 기존 사용자 서비스는 건드리지 않습니다.

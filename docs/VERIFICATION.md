@@ -2,6 +2,15 @@
 
 ## 실제 user-systemd fixture 검증 (후속 CI)
 
+### 실제 Linux CI 관찰
+
+- 코드 head `b292dd73579bbef16f27bd347e691913e7ae2553`, push run `38551300056`: Ubuntu 24.04.5/Python 3.12.15의 systemd-lifecycle 및 Python 3.11·3.12 회귀 job 성공.
+- 실제 로그: start PID 2492 → restart PID 2504, 각 PID의 start/stop acknowledgement, ActiveState=inactive/MainPID=0/Result=success, unit 제거 후 LoadState=not-found, 계정/home/runtime 제거 PASS 확인. fixture와 live readiness를 로그에서 명시적으로 구분합니다.
+- 최초 run `38551112831`은 별도 UID가 runner workspace를 읽을 수 없어 실패했습니다. runner 권한을 완화하지 않고 테스트 파일만 일회용 home에 복사하여 해결했습니다. 실패 실행도 계정/home/runtime cleanup PASS였습니다.
+- 이 증거 이후 manager cleanup의 ActiveState=inactive readback을 추가했습니다. 문서 포함 최종 head는 CI를 다시 실행하고 PR에서 exact SHA/run을 읽어 인계합니다. 위 SHA는 자기참조 최종 hash가 아닌 관찰한 코드 head입니다.
+- cleanup의 `not logged in or lingering` 및 mail spool 미존재 메시지는 이 계정이 로그인/linger/mail을 사용하지 않기 때문입니다. 제거 성공은 별도 readback으로 판단합니다. 기존 Actions Node 20 deprecation 경고는 남아 있으나 이 PR에서 무관한 action 업그레이드는 하지 않았습니다.
+
+
 - `.github/workflows/ci.yml`의 `systemd-lifecycle`은 mock systemctl 없이 별도 일회용 사용자와 실제 `user@UID.service`를 사용합니다. runner에 로그인 세션이 없어도 테스트 계정의 manager를 명시적으로 시작하며, 실패는 skip/성공으로 위장하지 않습니다.
 - `tests/systemd_lifecycle.py`: 설치된 `discord-helper` entry point로 install 두 번/start/status/restart/stop 호출. 원본 unit은 `unit_text(Paths)`와 완전히 같고 테스트 후에도 변하지 않습니다. fixture drop-in은 ExecStart만 stdlib 대기 프로세스로 바꾸고 AF_UNIX만 허용합니다. 공백/%/$ 경로, FragmentPath/DropInPaths, 상태/PID와 실제 SIGTERM 종료 기록을 확인합니다.
 - `tests/systemd_fixture.py`는 네트워크/Discord/Codex를 호출하지 않습니다. management 자식 환경은 `env -i` allowlist이며 운영 인증 파일을 읽지 않습니다. credentials.json/state.db가 생기지 않음을 검사합니다.
