@@ -71,7 +71,7 @@ async def test_official_remote_disabled_notification(tmp_path):
 @pytest.mark.parametrize('scenario', ['tool_item', 'unknown_item', 'turn_approval',
     'wrong_thread', 'wrong_turn', 'bad_citation', 'bool_citation', 'invalid_output',
     'extra_output_field', 'excessive_output', 'stream_mismatch', 'no_final', 'failed_turn',
-    'signed_out', 'api_key'])
+    'signed_out', 'api_key', 'turn_config_warning'])
 async def test_stream_contract_fail_closed(tmp_path, monkeypatch, scenario):
     from helperbot import codex_transport as transport
     monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
@@ -202,3 +202,15 @@ async def test_cleanup_drains_saturated_stdout_after_kill(tmp_path):
     if not eof:
         await client.process.stdout.read()
     assert done and eof, 'cleanup left a paused stdout pipe open'
+
+
+async def test_config_warning_allows_diagnostics_but_blocks_thread(tmp_path, capsys):
+    from helperbot.codex_transport import StdioClient
+    async with StdioClient((sys.executable, str(FIXTURE), 'config_warning'),
+                           cwd=tmp_path, env={'CODEX_HOME': str(tmp_path)}) as client:
+        await client.initialize()
+        await client.rpc('account/read', {'refreshToken': False})
+        assert client.configuration_warning is True
+        with pytest.raises(provider.ProviderUnavailable, match='configuration warning'):
+            await client.rpc('thread/start', {})
+    assert not capsys.readouterr().out

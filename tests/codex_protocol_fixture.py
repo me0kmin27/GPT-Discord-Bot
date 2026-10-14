@@ -48,6 +48,9 @@ for line in sys.stdin:
         if SCENARIO == 'unknown_notification':
             send({'method': 'future/tool/started', 'params': {}})
             continue
+        if SCENARIO == 'config_warning':
+            send({'method': 'configWarning', 'params': {'summary': 'synthetic-sensitive',
+                  'details': None, 'path': None, 'range': None}})
         if SCENARIO == 'early_tool':
             send({'method': 'item/started', 'params': {'threadId': 'fixture-thread',
                   'turnId': 'fixture-turn', 'item': {'type': 'webSearch', 'id': 'tool'}}})
@@ -118,6 +121,8 @@ for line in sys.stdin:
         if SCENARIO in ('tool_item', 'unknown_item'):
             send({'method': 'item/started', 'params': dict(scope, item={
                   'id': 'tool', 'type': 'commandExecution' if SCENARIO == 'tool_item' else 'newDangerousTool'})})
+        if SCENARIO == 'turn_config_warning':
+            send({'method': 'configWarning', 'params': {'summary': 'synthetic-sensitive'}})
         if SCENARIO == 'turn_approval':
             send({'id': 'deny-me', 'method': 'future/tool', 'params': {}})
         for delta in (text[:20], text[20:]):

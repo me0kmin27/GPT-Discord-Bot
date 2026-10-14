@@ -128,6 +128,8 @@ class StdioClient:
         self.events = deque()
         self.wire_bytes = 0
         self.event_count = 0
+        self.configuration_warning = False
+        self.inference_started = False
 
     async def __aenter__(self):
         self.deadline = asyncio.get_running_loop().time() + self.timeout
@@ -241,6 +243,13 @@ class StdioClient:
                 await self.send({'id': message['id'], 'error': {
                     'code': -32601, 'message': 'Client requests are not supported'}})
                 raise ProviderUnavailable('Codex server request rejected')
+            if message['method'] == 'configWarning':
+                self.configuration_warning = True
+                if self.inference_started:
+                    raise ProviderUnavailable('Codex configuration warning prevents inference')
+                # Signed-out diagnostics can complete; warning contents are not
+                # retained and the next non-diagnostic RPC is forbidden.
+                return {'method': 'configWarning', 'params': {}}
             if message['method'] == 'remoteControl/status/changed':
                 if message.get('params', {}).get('status') != 'disabled':
                     raise ProviderUnavailable('Codex remote control must remain disabled')
@@ -253,6 +262,10 @@ class StdioClient:
         return message
 
     async def rpc(self, method, params):
+        if method not in ('initialize', 'account/read'):
+            if self.configuration_warning:
+                raise ProviderUnavailable('Codex configuration warning prevents inference')
+            self.inference_started = True
         self.sequence += 1
         await self.send({'id': self.sequence, 'method': method, 'params': params})
         while True:

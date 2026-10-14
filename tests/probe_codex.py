@@ -14,25 +14,6 @@ from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from helperbot.codex_transport import CODEX_VERSION, StdioClient
-from helperbot.provider import ProviderUnavailable
-
-
-class ProbeClient(StdioClient):
-    """Only diagnostic method names; never payloads, homes, auth or errors."""
-    async def receive(self):
-        try:
-            return await super().receive()
-        except ProviderUnavailable as error:
-            trace = error.__traceback__
-            while trace:
-                if trace.tb_frame.f_code.co_name == 'receive':
-                    method = trace.tb_frame.f_locals.get('message', {}).get('method')
-                    # Public protocol method names from a fresh signed-out binary.
-                    if isinstance(method, str) and len(method) < 80 and all(
-                            c.isalpha() or c in '/_' for c in method):
-                        print(json.dumps({'probe_rejected_method': method}))
-                trace = trace.tb_next
-            raise
 
 
 def resolve_executable(path):
@@ -75,7 +56,7 @@ async def probe(executable, scratch):
             hashes[name] = hashlib.sha256(raw).hexdigest()
         command = (str(executable), '-c', 'cli_auth_credentials_store="file"',
                    '-c', 'forced_login_method="chatgpt"', 'app-server')
-        async with ProbeClient(command, cwd=work, env=env) as client:
+        async with StdioClient(command, cwd=work, env=env) as client:
             initialized = await asyncio.wait_for(client.initialize(), 15)
             account = await asyncio.wait_for(client.rpc('account/read', {'refreshToken': False}), 15)
             assert account.get('account') is None
@@ -87,6 +68,7 @@ async def probe(executable, scratch):
                 'account': 'signed-out', 'auth_file_created': False,
                 'thread_or_turn_started': False, 'process_reaped': True,
                 'live_inference': False, 'zero_tools_verified': False,
+                'configuration_warning_observed': client.configuration_warning,
                 'generated_schema_sha256': hashes}
 
 

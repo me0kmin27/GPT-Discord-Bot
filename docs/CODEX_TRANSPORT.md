@@ -17,6 +17,20 @@
   소스 패치/테스트 monkeypatch는 활성화 기능이 아니며 운영 사용법으로 제공하지 않는다.
 - **구현 완료 ≠ 로그인된 생성 검증 ≠ 공개 호스팅 승인 ≠ 배포 완료.** 실제 생성은 아직 열지 않는다.
 
+## 제품 경로 검증과 남은 저장 gap
+
+최종 목표는 **관련 해결 사례를 활용하고, 없으면 Codex OAuth로 새 답변을 생성**하는 도우미다.
+현재 비생성 검색 fallback은 미완성 상태의 안전한 임시 동작이지 제품 요구의 대체가 아니다.
+`test_no_match_generates_candidate_then_manual_resolution_is_retrieved`는 실제 Service/SQLite/stdio fixture로
+빈 사례 → provider 호출/생성 형식 응답 → candidate ID와 답변 연결 → 사용자가 `/resolved`에 해당하는
+수동 해결 확정 → 다음 요청에서 해당 사례 검색/인용을 검증한다. 생성 답변은 자동 확정하지 않는다.
+이 테스트는 live GPT 검증이 아니며, 실제 봇에서는 고정 gate 때문에 생성이 아직 불가능하다.
+
+**별도 구현 gap:** 현재 DB candidate에는 질문과 receipt가 저장되고 생성 답변 본문은 `Answer.text`/Discord
+응답에만 연결된다. 생성 답변 원문을 candidate의 영속 필드로 보관하는 스키마/삭제/보존 계약은 이 transport
+PR에서 추가하지 않았다. 따라서 ‘질문·AI답변 쌍을 후보로 영속 축적’까지 완료했다고 주장하지 않는다.
+향후 해당 저장 계약을 구현하더라도 사용자 해결 확인 전 검색 가능한 confirmed 지식으로 승격하지 않아야 한다.
+
 ## 실제 코드의 경계
 
 1. 요청마다 새 프로세스, 빈 HOME/작업 디렉터리, fresh ephemeral thread다. resume/fork/steer나 tenant별
@@ -106,6 +120,10 @@ probe는 매번 새로운 HOME/CODEX_HOME/cwd를 만들고 version 확인 및 JS
 
 실제 초기 알림 `remoteControl/status/changed`도 관측했다. status=disabled만 허용하며
 connected/알 수 없는 상태는 거절한다. remote control을 켜거나 WebSocket을 열지 않았다.
+Linux CI 초기 probe에서는 공식 `configWarning` 알림 때문에 실패했다. 이후 warning 본문은 버리고
+존재 여부만 기록하도록 구분했다. **initialize/account-read 진단만 계속할 수 있고 thread/start 등
+추론 관련 RPC는 거절**한다. 추론 중 도착한 warning도 즉시 실패한다. 경고를 숨겨 live readiness로
+바꾸거나 설정 검사를 우회하지 않는다. probe 결과의 `configuration_warning_observed`를 함께 확인한다.
 
 생성 스키마 SHA-256은 pinned GitHub 소스 파일의 SHA-256과 일치했다:
 
@@ -115,7 +133,7 @@ connected/알 수 없는 상태는 거절한다. remote control을 켜거나 Web
 | TurnStartParams | `583aff13e7a2da43fbb0150e0edc3c73171f374f0aa745dddba256166988a005` |
 | GetAccountParams | `30b545275f60975b55bd6fbaafd70f15505801d14168ee82d3931b6e93c78aab` |
 
-로컬 Python 3.9 회귀 실행: **273 passed, 1 skipped** (Linux 전용 항목), compileall 및 diff whitespace 검사 통과.
+로컬 Python 3.9 회귀 실행: **276 passed, 1 skipped** (Linux 전용 항목), compileall 및 diff whitespace 검사 통과.
 CI `codex-protocol` job은 Ubuntu에서 같은 공식 바이너리 probe를 실행한다.
 기존 Linux Python 3.11/3.12 전체 회귀 및 systemd 정상/실패복구 jobs도 유지한다.
 fixture의 합성 답변은 **live 모델 성공 증거가 아니다**. 실제 account/read 성공도 추론 성공이 아니다.
