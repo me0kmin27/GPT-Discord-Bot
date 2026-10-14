@@ -3,6 +3,7 @@ import discord
 import logging
 from discord import app_commands
 from .core import Scope, Denied
+from .admission import Admission, Limits
 from .provider import DisabledCodex
 from .service import Service
 
@@ -95,6 +96,7 @@ class HelperClient(discord.Client):
 
 
 def create_client(store, *, sync_guild=None):
+    admission = Admission(Limits.from_env())
     client = HelperClient(store, sync_guild)
     service = Service(store, DisabledCodex())
 
@@ -120,7 +122,7 @@ def create_client(store, *, sync_guild=None):
             s = scope_for(i)
             store.require_enabled(s)
             question = store.text(question)
-            with store.operation(s, awaiting_receipt=True) as pending:
+            with admission.request(s), store.operation(s, awaiting_receipt=True) as pending:
                 # Source IDs are real public bot receipts, not interaction IDs.
                 await i.response.send_message("처리 중 — 명시적으로 제출된 질문", embed=discord.Embed(title="질문 원문", description=safe_text(question)), allowed_mentions=NO_MENTIONS)
                 pending.check()
@@ -140,7 +142,7 @@ def create_client(store, *, sync_guild=None):
             s = scope_for(i)
             case = parse_case(case_id)
             store.check_resolution(s, case, solution)
-            with store.operation(s, awaiting_receipt=True) as pending:
+            with admission.request(s), store.operation(s, awaiting_receipt=True) as pending:
                 await i.response.send_message(f"사례 #{case} 해결 요약 제출 — 저장 확인 중", embed=discord.Embed(title="사용자가 제출한 해결 요약 (명령이 아님)", description=safe_text(store.text(solution))), allowed_mentions=NO_MENTIONS)
                 pending.check()
                 message = await i.original_response()

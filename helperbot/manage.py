@@ -216,8 +216,8 @@ def run(paths, *, check=False, sync_guild=None):
     token = None if check else (os.environ.get('DISCORD_BOT_TOKEN') or load_token(paths))
     with runtime_lock(paths):
         store = Store(paths.data / 'state.db')
-        client = create_client(store, sync_guild=sync_guild)
         try:
+            client = create_client(store, sync_guild=sync_guild)
             if check:
                 print(f'Offline check OK: {len(client.tree.get_commands())} commands; provider=disabled-codex; no network/login')
                 asyncio.run(client.close())
