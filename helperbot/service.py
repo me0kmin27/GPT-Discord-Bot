@@ -32,8 +32,7 @@ class Service:
         question = self.store.text(question)
         history = tuple(self.store.history(s))
         case = self.store.candidate(s, question, source_message)
-        # Latest bounded confirmed cases; not semantic relevance or pretrained data.
-        evidence = tuple(self.store.knowledge(s)[:3])
+        evidence = tuple(self.store.search_knowledge(s, question))
         try:
             reply = await asyncio.wait_for(
                 self.provider.answer(Request(s.tenant, question, history, evidence)), self.timeout)
@@ -50,9 +49,9 @@ class Service:
                 body = "Codex 실시간 생성 비활성: 안전한 연동 및 사용 조건 검증 대기"
             elif isinstance(exc, asyncio.TimeoutError):
                 body = "공급자 시간 초과: 생성 답변 없음"
-            body += "\n생성 답변이 아닙니다. 이 채널의 최근 확정 사례 (관련성 미검증):"
+            body += "\n생성 답변이 아닙니다. 질문과 어휘가 일치하는 이 채널의 확정 사례 (의미/정확성 보증 아님):"
             if not evidence:
-                body += "\n아직 확정된 사례가 없습니다. 해결 후 /resolved로 직접 등록하세요."
+                body += "\n검색 범위에서 일치하는 확정 사례를 찾지 못했습니다. 다른 핵심어로 질문하거나 해결 후 /resolved로 직접 등록하세요."
             for item in evidence:
                 body += f"\n사례 #{item['id']}: {item['solution'][:180]}\n{source_link(item)}"
         except Exception:

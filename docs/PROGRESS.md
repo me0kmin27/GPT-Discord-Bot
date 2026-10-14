@@ -1,5 +1,16 @@
 # 로컬 첫 마일스톤
 
+## 후속 PR: 질문 기반 bounded lexical retrieval
+
+- 기반 `origin/main` `21afcfc00ecc9913984c697f9c94e54b0f4eaf23`; 별도 `GPT-Discord-Bot-retrieval` worktree / `feat/relevant-case-retrieval`. 현재 Store/Service와 최초 README의 명시적 확정·출처·공급자 비활성 경계를 먼저 확인했습니다. 기존 worktree는 변경하지 않았습니다.
+- `/ask`가 무관한 최신 3건을 보여주던 경로를 tenant-filtered confirmed 검색으로 교체했습니다. 최근 ID 1000행 안에서 정규화된 단어 + 한글 음절 bigram의 고유 교집합 수로 순위를 매기고, 동점 ID 내림차순·최대 3건·0점 제외를 적용합니다. 검색 창 밖 행은 삭제하지 않습니다.
+- 후보 제외, 원래 해결 접수 메시지 인용, 정직한 no-match 안내. 기존 privacy/pending 취소·admission·capacity 유지. 스키마/마이그레이션/영구 검색 캐시/외부 의존성/모델 호출 추가 없음. Codex는 비활성이고 API 키로 대체하지 않습니다.
+- 실제 RED→GREEN: 최신 무관한 `[26,25,24]` 반환 대신 관련 `[1]` 기대(1 failed) → Service/Store 검색 연결; 한글 조사·해결 요약·전각/분해형 입력(4 failed) → NFKC와 한글 bigram; 기존 사례가 있는데 “아직 확정된 사례 없음” 표시(3 failed) → 검색 범위 no-match 안내.
+- 로컬 전체 **222 passed, 1 skipped** (macOS Python 3.9.6; systemd parser skip). 새 검색 테스트는 실제 SQLite와 disabled provider/명령 콜백을 사용합니다. tenant/후보 제외, SQL·FTS·wildcard 입력, 입력 길이, 고정 창 경계/원본 보존, 순위/동점/반복어, 삭제 9경로와 재등록을 검사합니다. 기존 callback 삭제 race는 실제 선택된 evidence ID까지 확인하도록 강화했습니다.
+- `compileall`, `git diff --check`, CLI `run --check` 성공: 6 commands, disabled-codex, no network/login. Ubuntu Python 3.11/3.12 전체 및 systemd CI는 push 후 **정확한 최종 SHA**로 확인하여 PR/인계에 기록합니다. 이 문서가 원격 성공을 미리 주장하지 않습니다.
+- 한계: 어휘 기반 휴리스틱은 의미/정확성을 보증하지 않으며 흔한 어미/짧은 단어에 오탐, 동의어/오타/띄어쓰기에 누락이 가능합니다. 최근 1000개 ID 창 밖 사례는 검색하지 않습니다. README에 검색 ≠ 생성 ≠ 모델 학습, 동기 계산/미제공 SLA 및 기존 운영 개인정보 경계를 설명했습니다.
+- 독립 검토는 부모 에이전트에 인계합니다. **병합/배포/로그인/실서버 호출 없음**.
+
 ## PR #6: 일회용 CI cleanup 후속
 
 - PR #5 merge `ef631d7cd1188384079f1571ab944b7e5dc12499` 기반 새 `GPT-Discord-Bot-cleanup` worktree/`ci/owned-cleanup`; 다른 worktree 보존.
