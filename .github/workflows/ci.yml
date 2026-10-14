@@ -8,6 +8,10 @@ jobs:
   systemd-lifecycle:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [normal, failure-recovery]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -15,10 +19,36 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install .
       - name: Real user-systemd lifecycle (offline fixture, not bot readiness)
+        if: matrix.scenario == 'normal'
         run: bash tests/run_systemd_ci.sh
+      - name: Inject original failure and interrupted outer cleanup
+        if: matrix.scenario == 'failure-recovery'
+        id: injected
+        continue-on-error: true
+        run: |
+          set +e
+          bash tests/run_systemd_ci.sh --inject-failure
+          result=$?
+          printf 'exit_code=%s\n' "$result" >> "$GITHUB_OUTPUT"
+          exit "$result"
       - name: Always clean disposable user manager
+        id: cleanup
         if: always()
         run: bash tests/run_systemd_ci.sh --cleanup
+      - name: Require original failure and successful orphan recovery
+        if: always() && matrix.scenario == 'failure-recovery'
+        env:
+          ORIGINAL_OUTCOME: ${{ steps.injected.outcome }}
+          ORIGINAL_EXIT: ${{ steps.injected.outputs.exit_code }}
+          ORPHAN_VERIFIED: ${{ steps.injected.outputs.orphan_verified }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          test "$ORIGINAL_OUTCOME" = failure
+          test "$ORIGINAL_EXIT" = 73
+          test "$ORPHAN_VERIFIED" = true
+          test "$CLEANUP_OUTCOME" = success
+          test ! -e "/run/dhci${GITHUB_RUN_ID}${GITHUB_RUN_ATTEMPT}.owned"
+          printf 'PASS: original failure 73 preserved; always recovery removed owned resources\n'
   test:
     runs-on: ubuntu-latest
     strategy:
