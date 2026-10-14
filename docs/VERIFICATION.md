@@ -1,6 +1,17 @@
 # 검증 범위 및 인계
 
-## 실제 user-systemd fixture 검증 (후속 CI)
+## PR #6: CI cleanup 소유권 및 실패 복구
+
+- 기반 main: PR #5 merge `ef631d7cd1188384079f1571ab944b7e5dc12499`. production 코드/기본값/인증/공급자는 변경하지 않습니다.
+- 관찰한 구현 head `2cbdf1484b0baec3003fbe6e8b71b6572e8546a6`: push run `38553448944`, PR run `38553456907` 모두 normal/failure-recovery 및 Python 3.11/3.12 성공. 문서·추가 guard 회귀 검사를 포함하는 최종 head는 새 CI 실행/로그를 읽고 PR 댓글과 인계에서 별도 확정합니다.
+- push failure-recovery job `115816707446`: 실제 fixture PID 2453 시작 → 원래 `SystemExit(73)` → 실제 stop 반환 0에 대해 expected=99 assertion 주입 → daemon-reload/LoadState=not-found 및 unit/drop-in 삭제 PASS → passwd 삭제 뒤 owned home/runtime 양쪽 orphan 확인 → harness exit 73 → **별도 always 단계** manager/account/home/runtime/state 제거 PASS. 마지막 단계는 failure outcome, code 73, orphan_verified=true, cleanup success를 모두 검사합니다. 성공처럼 실패를 숨기는 `continue-on-error`가 아닙니다.
+- runtime service는 정상 stop에서 디렉터리를 제거하므로, fault injection은 예약 UID 소유 runtime 디렉터리를 다시 만들고 identity를 기록해 orphan 경로 복구를 실제 실행합니다. 실제 userdel 실패나 SIGKILL 자체를 재현한 것은 아닙니다. fixture stop 명령 실패가 아니라 **stop 결과 assertion 실패**를 주입합니다.
+- root-private `/run/dhci<RUN_ID><ATTEMPT>.owned` 상태에 useradd **이전** UID/계정 표식 intent, 생성된 home/runtime의 device/inode/owner를 저장합니다. 고정된 `/home/<user>`, `/run/user/<uid>`만 검사하며 기존 계정/group/home/state, UID 재사용·계정 교체·미확인 경로·symlink를 거절합니다. passwd 항목이 없어도 저장된 identity가 일치하는 orphan은 복구하고, readback 성공 뒤 상태를 지웁니다. 원래 실패 코드는 cleanup 오류에 덮이지 않습니다.
+- 로컬 회귀는 실제 임시 디렉터리 삭제/unknown path·symlink 보존, orphan 복구, preexisting 계정/group/home 거절, 교체 계정/재사용 UID 거절, self-hosted guard, stop 오류 뒤 unit 삭제와 원래 실패 보존을 확인합니다. 계정/systemctl 경계는 대역이며 **실제 privileged Linux 증거는 위 CI**입니다. stop 지속/주입 경로는 수정 전 실패를 확인한 뒤 구현했습니다.
+- 폐기 가능한 GitHub-hosted VM 전용이며 운영 정리 도구가 아닙니다. hard kill/VM 종료 때 trap/always 실행은 보장하지 않습니다. mkdir/chown/runtime 시작과 identity 저장 사이에 끊기면 미확인 경로를 안전하게 남길 수 있습니다. 동시 악성 privileged 작업에 대한 보안 경계가 아닙니다.
+- fixture lifecycle은 live bot readiness가 아닙니다. 실제 봇 ExecStart/토큰/Discord/Codex, enable/linger·재부팅 지속성, 실서버 배포/비밀 복구 미검증. AF_UNIX는 fixture 제한일 뿐 CI 전체 네트워크 격리가 아닙니다.
+
+## PR #5 기록: 실제 user-systemd fixture 검증 (과거 CI)
 
 ### 실제 Linux CI 관찰
 

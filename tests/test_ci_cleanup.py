@@ -133,6 +133,53 @@ def test_orphan_probe_requires_account_absence_and_both_paths(tmp_path, monkeypa
         owner.verify_orphan('dhci123', state)
 
 
+@pytest.mark.parametrize('existing', ['account', 'group', 'home', 'symlink'])
+def test_prepare_never_adopts_preexisting_resources(tmp_path, monkeypatch, existing):
+    from types import SimpleNamespace
+    owner = load('systemd_ci_owner')
+    home = tmp_path / 'dhci123'
+    if existing == 'home':
+        home.mkdir()
+    elif existing == 'symlink':
+        home.symlink_to(tmp_path / 'missing')
+    monkeypatch.setattr(owner, 'Path', lambda _: tmp_path)
+    monkeypatch.setattr(owner, 'account', lambda _: object() if existing == 'account' else None)
+    monkeypatch.setattr(owner.grp, 'getgrall', lambda: [SimpleNamespace(gr_name='dhci123')] if existing == 'group' else [])
+    monkeypatch.setattr(owner, 'run', lambda *args, **kwargs: pytest.fail('must not run useradd'))
+    with pytest.raises(RuntimeError, match='preexisting'):
+        owner.prepare('dhci123', tmp_path / 'state')
+    assert not (tmp_path / 'state').exists()
+
+
+@pytest.mark.parametrize('change', ['uid', 'token', 'home', 'reused-uid'])
+def test_replaced_account_or_reused_uid_is_not_owned(monkeypatch, change):
+    from types import SimpleNamespace
+    owner = load('systemd_ci_owner')
+    state = {'uid': 23456, 'token': 'owned'}
+    entry = SimpleNamespace(pw_uid=23456, pw_gecos='owned', pw_dir='/home/dhci123')
+    if change == 'uid':
+        entry.pw_uid = 23457
+    elif change == 'token':
+        entry.pw_gecos = 'other'
+    elif change == 'home':
+        entry.pw_dir = '/home/other'
+    monkeypatch.setattr(owner, 'account', lambda _: entry)
+    monkeypatch.setattr(owner.pwd, 'getpwall', lambda: [SimpleNamespace(pw_uid=23456, pw_name='other')]
+                        if change == 'reused-uid' else [])
+    with pytest.raises(RuntimeError, match='refusing'):
+        owner.validate_account('dhci123', state)
+
+
+def test_privileged_helper_refuses_non_hosted_environment(monkeypatch):
+    owner = load('systemd_ci_owner')
+    monkeypatch.setattr(owner.sys, 'platform', 'linux')
+    monkeypatch.setattr(owner.os, 'geteuid', lambda: 0)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setenv('RUNNER_ENVIRONMENT', 'self-hosted')
+    with pytest.raises(RuntimeError, match='GitHub-hosted'):
+        owner.main()
+
+
 def test_unknown_path_blocks_all_privileged_cleanup(tmp_path, monkeypatch):
     owner = load('systemd_ci_owner')
     home = tmp_path / 'home'

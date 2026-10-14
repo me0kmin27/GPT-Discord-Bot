@@ -1,6 +1,13 @@
 # 로컬 첫 마일스톤
 
-## 후속 PR: 실제 Linux 사용자 systemd lifecycle
+## PR #6: 일회용 CI cleanup 후속
+
+- PR #5 merge `ef631d7cd1188384079f1571ab944b7e5dc12499` 기반 새 `GPT-Discord-Bot-cleanup` worktree/`ci/owned-cleanup`; 다른 worktree 보존.
+- CI-only root-private UID/소유권 상태와 계정 없는 orphan home/runtime 복구, fixture stop assertion 실패 뒤 정리 지속, 원래 실패 보존. 임의 경로 삭제나 운영 cleanup CLI를 추가하지 않습니다.
+- 구현 head `2cbdf1484b0baec3003fbe6e8b71b6572e8546a6`의 실제 GitHub-hosted push/PR CI 성공. failure-recovery는 실제 fixture 시작·stop assertion 오류·exit 73·owned orphan 사전조건·별도 always 복구를 확인했습니다. 최종 문서/test head는 재실행 후 PR 댓글에서 확정합니다.
+- 상세 소유권 거절 경계/주입 방식/잔여 interruption window는 `VERIFICATION.md`와 README 참조. live bot/공급자/인증/운영 배포 범위는 그대로 닫혀 있습니다.
+
+## PR #5 기록: 실제 Linux 사용자 systemd lifecycle
 
 - 실제 Linux 코드 head `b292dd73579bbef16f27bd347e691913e7ae2553` / run `38551300056` 성공: PID 교체/종료, inactive 상태, unit 및 일회용 계정 정리 로그 확인. 최종 문서 head CI는 재확인 후 PR 인계. 상세 실패 원인/경계는 VERIFICATION 참조.
 
