@@ -29,7 +29,22 @@ NOTIFICATIONS = frozenset({
     'account/updated', 'account/rateLimits/updated', 'error'})
 
 
-def execution_config():
+def validate_options(options=None):
+    """Only operator search/model selection; never arbitrary Codex config."""
+    if options is None:
+        return {}
+    if not isinstance(options, dict) or not set(options) <= {
+            'web_search', 'model', 'model_reasoning_effort'}:
+        raise ValueError('Invalid Codex operator options')
+    for key, value in options.items():
+        if (not isinstance(value, str) or not 0 < len(value) <= 128
+                or any(not (c.isascii() and (c.isalnum() or c in '._-/')) for c in value)
+                or (key == 'web_search' and value not in ('disabled', 'live'))):
+            raise ValueError('Invalid Codex operator options')
+    return dict(options)
+
+
+def execution_config(options=None):
     """Controls verified against rust-v0.162.1 config schema and tool registry.
 
     Do not use removed js_repl/apply_patch flags as imaginary security controls.
@@ -52,13 +67,14 @@ def execution_config():
                     'shell_snapshot', 'hooks', 'memories', 'request_permissions_tool'):
         config['features.' + feature] = False
     config['features.skip_host_skill_discovery'] = True
+    config.update(validate_options(options))
     return config
 
 
-def validate_config(config):
+def validate_config(config, options=None):
     """Verify resolved controls, not whether an arbitrary warning was emitted."""
     try:
-        for key, expected in execution_config().items():
+        for key, expected in execution_config(options).items():
             if key.startswith('tools.'):
                 continue  # Public config/read omits these utility switches.
             actual = config
@@ -78,9 +94,9 @@ def validate_config(config):
         raise ProviderUnavailable('Codex effective configuration restrictions rejected') from None
 
 
-def command_for(executable):
+def command_for(executable, options=None):
     args = [str(executable)]
-    for key, value in execution_config().items():
+    for key, value in execution_config(options).items():
         # TOML scalar values; empty inline table differs from JSON object syntax.
         encoded = '{}' if value == {} else json.dumps(value)
         args.extend(('-c', key + '=' + encoded))
@@ -118,9 +134,10 @@ def prepare_request(request):
 
 class CodexOAuthProvider:
     """Local managed OAuth with bounded, isolated request processes."""
-    def __init__(self, executable, data, *, timeout=20):
+    def __init__(self, executable, data, *, timeout=20, options=None):
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:
             raise ValueError('Invalid Codex timeout')
+        self.options = validate_options(options)
         self.executable = Path(executable)
         self.data = Path(data)
         if not self.executable.is_absolute() or not self.data.is_absolute():
@@ -128,7 +145,7 @@ class CodexOAuthProvider:
         self.timeout = timeout
 
     def _command(self):
-        return command_for(self.executable)
+        return command_for(self.executable, self.options)
 
     async def answer(self, request):
         payload = prepare_request(request)
@@ -165,7 +182,7 @@ class CodexOAuthProvider:
             async with StdioClient(self._command(), cwd=cwd, env=env, timeout=self.timeout) as client:
                 await client.initialize()
                 resolved = await client.rpc('config/read', {'includeLayers': False})
-                validate_config(resolved['config'])
+                validate_config(resolved['config'], self.options)
                 account = await client.rpc('account/read', {'refreshToken': False})
                 if (account.get('account') or {}).get('type') != 'chatgpt':
                     raise ProviderUnavailable('Codex managed ChatGPT login required')
