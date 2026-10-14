@@ -5,6 +5,26 @@ on:
 permissions:
   contents: read
 jobs:
+  web-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install '.[web]' playwright==1.60.0
+      - run: python -m playwright install --with-deps chromium
+      - name: Packaged CLI and private GUI through real Chromium (synthetic only)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gui-runtime"
+          cd "$RUNNER_TEMP"
+          TMPDIR="$RUNNER_TEMP/gui-runtime" python "$GITHUB_WORKSPACE/tests/web_browser_smoke.py" "$RUNNER_TEMP/web-evidence"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-web-browser-evidence
+          path: ${{ runner.temp }}/web-evidence
+          if-no-files-found: error
   installer-bootstrap:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -92,7 +112,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install '.[test]'
+      - run: python -m pip install '.[test,web]'
       - run: mkdir -p .runtime
       - run: python -m pytest -q --basetemp=.runtime/pytest
       - run: discord-helper --config-dir "$PWD/.runtime/check/config" --data-dir "$PWD/.runtime/check/data" doctor

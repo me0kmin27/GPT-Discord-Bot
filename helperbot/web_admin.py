@@ -86,7 +86,9 @@ def create_app(paths, *, port=8765):
         response.headers['Content-Security-Policy'] = "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
-        response.headers['Referrer-Policy'] = 'no-referrer'
+        # no-referrer makes Chromium form POST Origin null; retain same-origin
+        # provenance while disclosing no referrer to other origins.
+        response.headers['Referrer-Policy'] = 'same-origin'
         return response
 
     def authenticated(function):
@@ -141,7 +143,7 @@ def create_app(paths, *, port=8765):
     @authenticated
     def settings():
         return render_template('settings.html', config=read_settings(paths), status=service_status(),
-                               message='설정 저장 완료. 실행 중인 봇에는 아직 적용되지 않았습니다.' if request.args.get('saved') == '1' else None)
+                               message='설정 저장 완료. 실행 중인 봇에는 아직 적용되지 않았습니다.' if session.pop('saved', False) else None)
 
     @app.post('/save')
     @authenticated
@@ -162,7 +164,8 @@ def create_app(paths, *, port=8765):
         except ValueError:
             raise ManagementError('제한 시간은 숫자로 입력하세요.') from None
         save_settings(paths, changes, request.form.get('revision'))
-        return redirect(url_for('settings', saved='1'))
+        session['saved'] = True
+        return redirect(url_for('settings'))
 
     @app.get('/apply')
     @authenticated

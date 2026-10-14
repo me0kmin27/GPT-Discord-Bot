@@ -1,0 +1,30 @@
+{
+  "synthetic_only": true,
+  "screenshots": [
+    "01-login.png",
+    "02-settings-desktop.png",
+    "03-saved-readback.png",
+    "04-validation-error.png",
+    "05-csrf-rejected.png",
+    "06-restart-confirmation.png",
+    "07-settings-mobile.png"
+  ],
+  "count": 7,
+  "verified": [
+    "packaged_waitress",
+    "cli_show_set_readback",
+    "browser_login_logout",
+    "gui_save_cli_readback",
+    "validation_no_write",
+    "csrf_rejection",
+    "restart_confirmation_cancel",
+    "responsive_390px",
+    "local_assets_only"
+  ],
+  "not_verified": [
+    "live_systemd_restart",
+    "bot_applied_settings",
+    "Discord",
+    "OAuth_inference"
+  ]
+}
