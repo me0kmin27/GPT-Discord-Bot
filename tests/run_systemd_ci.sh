@@ -46,6 +46,8 @@ sudo useradd --create-home --shell /bin/bash "$user"
 created=true
 touch "${RUNNER_TEMP:?}/$user.created"
 uid=$(id -u "$user")
+# Do not relax runner workspace permissions for the disposable account.
+sudo install -o "$user" -g "$user" -m 600 tests/systemd_lifecycle.py tests/systemd_fixture.py "/home/$user/"
 # Explicit test-only manager; no reliance on runner login/DBus, no lingering.
 sudo systemctl start "user@${uid}.service"
 sudo systemctl is-active "user@${uid}.service"
@@ -54,4 +56,4 @@ sudo -u "$user" env -i \
   PATH="$(dirname "$python"):/usr/bin:/bin" \
   XDG_RUNTIME_DIR="/run/user/$uid" \
   DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
-  "$python" "$PWD/tests/systemd_lifecycle.py"
+  "$python" "/home/$user/systemd_lifecycle.py"
