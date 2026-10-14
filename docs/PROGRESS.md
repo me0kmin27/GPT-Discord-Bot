@@ -1,4 +1,13 @@
-# 로컬 첫 마일스톤
+# 진행 상태 — 현재 판정과 과거 기록
+
+## PR #2–#7 병합 후 현재 판정
+
+- 기준 main: `7f9f5ee6dd6b494ad2163b069e05a846d0c90061`. PR #2–#7 모두 MERGED로 재조회했습니다. 정확한 각 head/merge와 남은 결정은 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) 참조.
+- 로컬 사례 축적/관련 검색/삭제, admission/capacity 구현 및 오프라인 검증. Linux 수명주기는 실제 CI **fixture** 검증이며 live bot 증거가 아닙니다.
+- 생성 공급자는 disabled. 공개 hosted app-server 단일 구독 relay는 진행하지 않으며 승인된 제품/공급자 경로 결정이 먼저입니다. Discord pilot/배포 대상/운영 정책 결정과 live 검증은 남았습니다.
+- 이 문서 아래의 “병합 안 함/최종 CI 대기” 및 테스트 수는 해당 PR 작성 당시 **과거 기록**입니다. 현재 미병합/미실행 상태로 읽지 마세요. 이번 docs/test PR 자체는 병합하지 않습니다.
+
+## 과거 마일스톤 기록
 
 ## 후속 PR: 질문 기반 bounded lexical retrieval
 

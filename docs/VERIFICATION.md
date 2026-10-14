@@ -1,5 +1,15 @@
 # 검증 범위 및 인계
 
+## 현재 증거 기준 — PR #2–#7 병합 후
+
+- main `7f9f5ee6dd6b494ad2163b069e05a846d0c90061`; 원격 run `38556271591`의 headSha 일치 및 Python 3.11/3.12, systemd normal/failure-recovery 네 job 성공 재조회. 과거 PR별 정확한 최종 head/merge는 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)에 정리했습니다.
+- 새 연결된 acceptance: `tests/test_release_acceptance.py`의 질문 → 확정 → 관련 검색 → 개인정보 삭제 → SQLite 재개방. 실제 Store/Service/DisabledCodex 및 합성 receipt ID, 네트워크/Discord 연결 없음.
+- baseline: macOS **222 passed, 1 skipped**. 새 테스트 단독 **1 passed**. 삭제 no-op 음성 대조는 남아 있는 본인 문맥 단언에서 **1 failed**; production 소스 변경 없음. 이는 기존 동작의 회귀 검증이지 새 기능 TDD RED나 실제 결함 발견이 아닙니다.
+- 추가 후 전체 macOS Python 3.9.6 실행: **223 passed, 1 skipped** (systemd parser 없음). `compileall helperbot tests`, `git diff --check`, 별도 빈 경로의 CLI doctor/run --check 성공: `credentials_present=False`, `6 commands; provider=disabled-codex; no network/login`.
+- 초기 시스템 Python에는 pytest가 없어 기존 retrieval worktree 가상환경 인터프리터를 사용했습니다. 최초 basetemp 부모 누락 오류는 `mkdir -p .runtime` 후 해소했으며 제품 결함/RED로 계산하지 않습니다. 테스트 대상 모듈은 새 worktree입니다.
+- 아래 과거 구현 head/테스트 수/“CI 대기·병합 전” 문구는 역사 기록이며 현재 상태가 아닙니다. 이번 최종 docs/test head의 원격 push/PR CI는 push 후 정확한 SHA로 조회해 PR 댓글/인계에 기록합니다. 독립 검토는 부모 작업자에게 요청하며 자체 검토로 대신하지 않습니다.
+
+
 ## PR #6: CI cleanup 소유권 및 실패 복구
 
 - 기반 main: PR #5 merge `ef631d7cd1188384079f1571ab944b7e5dc12499`. production 코드/기본값/인증/공급자는 변경하지 않습니다.
