@@ -137,8 +137,19 @@ async def test_purge_invalidates_initial_ask_even_if_reenabled(store, event, ree
 
 
 @pytest.mark.parametrize('event', ['other_guild', 'other_channel', 'other_user', 'own_receipt', 'evidence', 'privacy', 'thread_evidence'])
-async def test_deletion_during_service_is_scoped_and_suppresses_stale_output(store, event):
+async def test_deletion_during_service_is_scoped_and_suppresses_stale_output(store, event, monkeypatch):
     import asyncio
+    from helperbot.provider import DisabledCodex
+    deletion_finished = asyncio.Event()
+
+    class GatedDisabledCodex(DisabledCodex):
+        async def answer(self, request):
+            # Supplementary service-await coverage needs a real suspension:
+            # an immediately failing disabled provider need not yield on 3.12.
+            await deletion_finished.wait()
+            return await super().answer(request)
+
+    monkeypatch.setattr('helperbot.discord_app.DisabledCodex', GatedDisabledCodex)
     client = create_client(store)
     scope = Scope(1, 10, 12, 100, admin=True)
     store.configure(scope, True)
@@ -164,6 +175,7 @@ async def test_deletion_during_service_is_scoped_and_suppresses_stale_output(sto
             await client.on_raw_message_delete(SimpleNamespace(
                 guild_id=1, channel_id=12 if event == 'own_receipt' else 13,
                 message_id=501 if event == 'own_receipt' else 601))
+        deletion_finished.set()
 
     async def receipt():
         # Event cannot run until the real service yields at its provider await.
