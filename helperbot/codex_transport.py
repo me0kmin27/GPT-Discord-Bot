@@ -28,8 +28,8 @@ NOTIFICATIONS = frozenset({
 
 def require_supported_transport():
     raise ProviderUnavailable(
-        'Codex zero-tools enforcement unavailable in supported app-server protocol; '
-        'hosted activation is separately prohibited pending an approved architecture')
+        'Codex zero-tools control is not verified for pinned app-server; '
+        'transport implemented, activation blocked (hosted permission is a separate gate)')
 
 
 def prepare_request(request):
@@ -128,6 +128,8 @@ class StdioClient:
         self.events = deque()
         self.wire_bytes = 0
         self.event_count = 0
+        self.configuration_warning = False
+        self.inference_started = False
 
     async def __aenter__(self):
         self.deadline = asyncio.get_running_loop().time() + self.timeout
@@ -149,13 +151,20 @@ class StdioClient:
         return self
 
     @staticmethod
-    async def _settle(task):
+    async def _settle(task, *, propagate_cancel=False):
+        cancelled = False
         while True:
             try:
-                return await asyncio.shield(task)
+                result = await asyncio.shield(task)
+                break
             except asyncio.CancelledError:
+                cancelled = True
                 if task.done():
-                    return task.result()
+                    result = task.result()
+                    break
+        if cancelled and propagate_cancel:
+            raise asyncio.CancelledError()
+        return result
 
     async def _bounded(self, awaitable):
         remaining = max(0, self.deadline - asyncio.get_running_loop().time())
@@ -170,6 +179,13 @@ class StdioClient:
                 task.cancel()
                 await self._settle(asyncio.ensure_future(asyncio.gather(task, return_exceptions=True)))
 
+    async def _reap(self):
+        # After group kill, discard buffered bytes so asyncio can close a paused
+        # pipe. Do not accumulate/log them, even on excessive-output failures.
+        while await self.process.stdout.read(MAX_FRAME):
+            pass
+        await self.process.wait()
+
     async def __aexit__(self, *exc):
         if self.process is not None:
             try:
@@ -179,8 +195,11 @@ class StdioClient:
             self.process.stdin.close()
             # SIGKILL is intentional: no model/tool work may continue after a
             # privacy cancellation. No reliance on an unacknowledged interrupt RPC.
-            waiting = asyncio.create_task(self.process.wait())
-            await self._settle(waiting)
+            waiting = asyncio.create_task(self._reap())
+            try:
+                await self._settle(waiting, propagate_cancel=True)
+            finally:
+                self.events.clear()
         self.events.clear()
 
     async def send(self, message):
@@ -211,12 +230,26 @@ class StdioClient:
         except (OSError, ValueError, RecursionError):
             raise ProviderUnavailable('Codex invalid or excessive protocol output') from None
         if 'method' in message:
+            if (not isinstance(message['method'], str)
+                    or not isinstance(message.get('params'), dict)):
+                raise ProviderUnavailable('Codex malformed notification or request')
+            if message['method'] in ('item/started', 'item/completed'):
+                item = message['params'].get('item')
+                if not isinstance(item, dict) or item.get('type') not in ('userMessage', 'reasoning', 'agentMessage'):
+                    raise ProviderUnavailable('Codex tool or unknown item rejected')
             if 'id' in message:
                 # Includes approvals, dynamic tools, external token refresh, and
                 # UNKNOWN future requests. Never approve or supply credentials.
                 await self.send({'id': message['id'], 'error': {
                     'code': -32601, 'message': 'Client requests are not supported'}})
                 raise ProviderUnavailable('Codex server request rejected')
+            if message['method'] == 'configWarning':
+                self.configuration_warning = True
+                if self.inference_started:
+                    raise ProviderUnavailable('Codex configuration warning prevents inference')
+                # Signed-out diagnostics can complete; warning contents are not
+                # retained and the next non-diagnostic RPC is forbidden.
+                return {'method': 'configWarning', 'params': {}}
             if message['method'] == 'remoteControl/status/changed':
                 if message.get('params', {}).get('status') != 'disabled':
                     raise ProviderUnavailable('Codex remote control must remain disabled')
@@ -229,6 +262,10 @@ class StdioClient:
         return message
 
     async def rpc(self, method, params):
+        if method not in ('initialize', 'account/read'):
+            if self.configuration_warning:
+                raise ProviderUnavailable('Codex configuration warning prevents inference')
+            self.inference_started = True
         self.sequence += 1
         await self.send({'id': self.sequence, 'method': method, 'params': params})
         while True:

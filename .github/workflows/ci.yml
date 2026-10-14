@@ -5,6 +5,23 @@ on:
 permissions:
   contents: read
 jobs:
+  codex-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned official tooling locally (no login)
+        run: npm ci --prefix tools/protocol --ignore-scripts --no-audit --no-fund
+      - name: Real signed-out schema and stdio handshake (not live AI)
+        run: |
+          mkdir -p .runtime
+          python tests/probe_codex.py tools/protocol/node_modules .runtime
   systemd-lifecycle:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

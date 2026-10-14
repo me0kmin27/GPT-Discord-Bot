@@ -18,3 +18,4 @@ credentials.json
 codex/
 build/
 dist/
+node_modules/
