@@ -45,6 +45,13 @@ def test_operator_options_are_narrow_and_validated(options, tmp_path):
         transport.CodexOAuthProvider(Path(sys.executable), tmp_path, options=options)
 
 
+def test_nonsecret_operator_example_is_valid(tmp_path):
+    example = json.loads((Path(__file__).parents[1] / 'examples/runtime.codex-web-search.json').read_text())
+    assert example['codex'] == {'web_search': 'live', 'model': 'gpt-6.1-sol',
+                                'model_reasoning_effort': 'low'}
+    assert transport.validate_options(example['codex']) == example['codex']
+
+
 def test_runtime_options_reach_provider(tmp_path, monkeypatch):
     from helperbot import manage
     paths = manage.Paths(tmp_path / 'config', tmp_path / 'data', tmp_path / 'units')

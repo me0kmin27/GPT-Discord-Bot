@@ -81,7 +81,8 @@ were checked against the **rust-v0.162.1** source and the actual native binary.
 - Disable shell tool, view-image, code-mode/code-mode-only, apps, plugins,
   multi-agent/v2, browser/computer use, image generation, shell snapshot, hooks,
   memories and permission-request tools through verified feature switches. Disable
-  web search; no MCP servers; shell environment inheritance is `none`; login shells
+  web search by default; explicit operator live search is documented in
+  [CODEX_WEB_SEARCH.md](CODEX_WEB_SEARCH.md). No MCP servers; shell environment inheritance is `none`; login shells
   are disabled. Host skill discovery is skipped; project document byte budget is 0.
 - `tools.update_plan.enabled=false` and experimental user-input utility are set,
   but these utility fields are omitted by public `config/read`; their setting is
@@ -92,7 +93,8 @@ were checked against the **rust-v0.162.1** source and the actual native binary.
   overrides; reject application `config.toml`. Startup warning text is discarded:
   a warning alone is not an inference ban. Actual invalid settings fail validation.
   Delayed notices also do not constitute an artificial gate; protocol errors,
-  mismatched effective controls, tool items and server requests still abort.
+  mismatched effective controls, unapproved tool items and server requests still abort.
+  Explicit live search admits validated webSearch progress, never as final text.
 - Check returned thread sandbox, approval policy, reviewer, cwd, model provider,
   ephemeral flag and absence of a session path before sending user data.
 - Reject symlinked runtime/auth paths and non-private/non-owner auth files without
