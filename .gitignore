@@ -6,3 +6,15 @@ __pycache__/
 .env
 *.db
 *.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.log
+.env.*
+auth.json
+credentials.json
+.codex/
+codex/
+build/
+dist/

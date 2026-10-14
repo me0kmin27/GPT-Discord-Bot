@@ -25,7 +25,10 @@ class Scope:
 
 class Store:
     def __init__(self, path):
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        path = Path(path).absolute()
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            raise Denied("심볼릭 링크 데이터베이스 경로는 허용하지 않습니다.")
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA secure_delete=ON")

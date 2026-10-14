@@ -8,6 +8,9 @@ version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = ["discord.py==2.7.1"]
 
+[project.scripts]
+discord-helper = "helperbot.manage:main"
+
 [project.optional-dependencies]
 test = ["pytest==8.4.2", "pytest-asyncio==1.2.0"]
 

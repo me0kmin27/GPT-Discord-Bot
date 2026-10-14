@@ -1,5 +1,6 @@
 """Discord transport: slash commands only, no passive message ingestion."""
 import discord
+import logging
 from discord import app_commands
 from .core import Scope, Denied
 from .provider import DisabledCodex
@@ -63,6 +64,9 @@ class HelperClient(discord.Client):
         self.store = store
         self.tree = app_commands.CommandTree(self)
         self.sync_guild = sync_guild
+
+    async def on_error(self, event_method, *args, **kwargs):
+        logging.getLogger(__name__).error("Gateway event processing failed; sensitive details suppressed")
 
     async def on_raw_message_delete(self, payload):
         if payload.guild_id:
