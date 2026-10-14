@@ -37,6 +37,13 @@ their effective-state checks remain authoritative.
 - Minimal fix checkout: `python -m pytest -q` -> **421 passed, 1 skipped** on
   local macOS/Python 3.9. The skip is the existing Linux-only check.
 
+- Parent subsequently reported an operator-authorized installed-file hotfix:
+  generic `warning` goes through the existing sanitized `configWarning` branch,
+  with a pre-change backup and service restart. This is a live patch atop the
+  prior installed revision, not deployment of this PR. This PR additionally
+  validates the warning shape and preserves a non-null thread scope.
+- CI now includes Python 3.13 to match the operator-reported interpreter.
+
 ## Public reference
 
 Pinned schema:
