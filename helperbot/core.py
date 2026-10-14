@@ -66,23 +66,53 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA secure_delete=ON")
         self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.execute("CREATE TABLE IF NOT EXISTS channels (guild INTEGER, channel INTEGER, PRIMARY KEY(guild, channel))")
-        self.db.execute("""CREATE TABLE IF NOT EXISTS cases (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            guild INTEGER NOT NULL, channel INTEGER NOT NULL,
-            source_channel INTEGER NOT NULL, author INTEGER NOT NULL,
-            question TEXT NOT NULL, question_message INTEGER NOT NULL,
-            status TEXT NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate','confirmed')),
-            solution TEXT, resolver INTEGER, resolution_channel INTEGER, resolution_message INTEGER
-        )""")
-        self.db.execute("CREATE INDEX IF NOT EXISTS case_tenant ON cases(guild, channel, status, id)")
-        self.db.execute("""CREATE TABLE IF NOT EXISTS turns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, guild INTEGER, channel INTEGER,
-            conversation INTEGER, user INTEGER, question TEXT
-        )""")
-        self.db.execute("CREATE INDEX IF NOT EXISTS turn_scope ON turns(guild, channel, conversation, user, id)")
-        self.db.commit()
+        try:
+            self._initialize_schema()
+        except BaseException:
+            self.db.close()
+            raise
         self._pending = set()
+
+    def _initialize_schema(self):
+        # Version 0 is the original unversioned schema. Additive DDL only;
+        # serialize concurrent openers and roll back DDL + version together.
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            version = self.db.execute("PRAGMA user_version").fetchone()[0]
+            if version not in (0, 1):
+                raise Denied("Unsupported database schema version")
+            self.db.execute("CREATE TABLE IF NOT EXISTS channels (guild INTEGER, channel INTEGER, PRIMARY KEY(guild, channel))")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS cases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild INTEGER NOT NULL, channel INTEGER NOT NULL,
+                source_channel INTEGER NOT NULL, author INTEGER NOT NULL,
+                question TEXT NOT NULL, question_message INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'candidate' CHECK(status IN ('candidate','confirmed')),
+                solution TEXT, resolver INTEGER, resolution_channel INTEGER, resolution_message INTEGER
+            )""")
+            self.db.execute("CREATE INDEX IF NOT EXISTS case_tenant ON cases(guild, channel, status, id)")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, guild INTEGER, channel INTEGER,
+                conversation INTEGER, user INTEGER, question TEXT
+            )""")
+            self.db.execute("CREATE INDEX IF NOT EXISTS turn_scope ON turns(guild, channel, conversation, user, id)")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS generated_answers (
+                case_id INTEGER PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
+                answer TEXT NOT NULL CHECK(typeof(answer)='text' AND length(answer) BETWEEN 1 AND 1000
+                    AND instr(answer, char(0))=0 AND length(CAST(answer AS BLOB)) <= 4000)
+            )""")
+            self.db.execute("""CREATE TABLE IF NOT EXISTS generated_answer_sources (
+                answer_case INTEGER NOT NULL REFERENCES generated_answers(case_id) ON DELETE CASCADE,
+                source_case INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                PRIMARY KEY(answer_case, source_case)
+            )""")
+            self.db.execute("CREATE INDEX IF NOT EXISTS answer_source ON generated_answer_sources(source_case)")
+            self.db.execute("""CREATE TRIGGER IF NOT EXISTS purge_derived_answers BEFORE DELETE ON cases
+                BEGIN
+                    DELETE FROM generated_answers WHERE case_id IN (
+                        SELECT answer_case FROM generated_answer_sources WHERE source_case=OLD.id);
+                END""")
+            self.db.execute("PRAGMA user_version=1")
 
     @contextmanager
     def operation(self, s, *, awaiting_receipt=False):
@@ -132,6 +162,49 @@ class Store:
             self.db.execute("INSERT INTO turns(guild,channel,conversation,user,question) VALUES (?,?,?,?,?)", (*key, question))
             self.db.execute("DELETE FROM turns WHERE guild=? AND channel=? AND conversation=? AND user=? AND id NOT IN (SELECT id FROM turns WHERE guild=? AND channel=? AND conversation=? AND user=? ORDER BY id DESC LIMIT 8)", (*key, *key))
         return cur.lastrowid
+
+    def save_generated_answer(self, s, case, answer, pending, evidence=()):
+        """Attach one validated draft, never promote it or resurrect deleted cases."""
+        if pending not in self._pending or pending.scope != s:
+            raise Denied("유효한 요청이 아닙니다.")
+        pending.check()
+        answer = self.text(answer)
+        if len(answer) > 1000 or '\x00' in answer:
+            raise Denied("생성 답변 저장 한도를 초과했습니다.")
+        if (not isinstance(evidence, (tuple, list)) or len(evidence) > SEARCH_RESULTS
+                or any(type(key) is not int or not 0 < key < 2**63 for key in evidence)
+                or len(set(evidence)) != len(evidence)):
+            raise Denied("생성 답변의 근거가 유효하지 않습니다.")
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            self.require_enabled(s)
+            pending.check()
+            row = self.db.execute(
+                "SELECT id FROM cases WHERE id=? AND guild=? AND channel=? "
+                "AND source_channel=? AND author=? AND status='candidate'",
+                (case, *s.tenant, s.conversation, s.user)).fetchone()
+            if not row:
+                raise Denied("유효한 후보 사례가 아닙니다.")
+            self.db.execute("INSERT INTO generated_answers(case_id,answer) VALUES (?,?)", (case, answer))
+            # Track every supplied source, not merely the model's claimed citations.
+            for source in evidence:
+                row = self.db.execute(
+                    "SELECT id FROM cases WHERE id=? AND guild=? AND channel=? AND status='confirmed'",
+                    (source, *s.tenant)).fetchone()
+                if not row:
+                    raise Denied("생성 답변의 근거가 삭제되었거나 유효하지 않습니다.")
+                self.db.execute("INSERT INTO generated_answer_sources VALUES (?,?)", (case, source))
+
+    def generated_answer(self, s, case):
+        """Owner-only draft access; drafts are not knowledge/provider evidence."""
+        self.require_enabled(s)
+        row = self.db.execute(
+            "SELECT a.answer FROM cases c LEFT JOIN generated_answers a ON a.case_id=c.id "
+            "WHERE c.id=? AND c.guild=? AND c.channel=? AND c.source_channel=? AND c.author=?",
+            (case, *s.tenant, s.conversation, s.user)).fetchone()
+        if not row:
+            raise Denied("이 대화의 본인 사례만 조회할 수 있습니다.")
+        return row['answer']
 
     def check_resolution(self, s, case, solution):
         self.require_enabled(s)

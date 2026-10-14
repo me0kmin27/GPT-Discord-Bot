@@ -33,16 +33,23 @@ class Service:
         history = tuple(self.store.history(s))
         case = self.store.candidate(s, question, source_message)
         evidence = tuple(self.store.search_knowledge(s, question))
+        generated = None
         try:
             reply = await asyncio.wait_for(
                 self.provider.answer(Request(s.tenant, question, history, evidence)), self.timeout)
             allowed = {item['id'] for item in evidence}
-            if not isinstance(reply.text, str) or not reply.text.strip() or not set(reply.case_ids).issubset(allowed):
+            if (not isinstance(reply.text, str) or not reply.text.strip()
+                    or len(reply.text) > 1000 or '\x00' in reply.text
+                    or not isinstance(reply.case_ids, (tuple, list)) or len(reply.case_ids) > 3
+                    or any(type(key) is not int for key in reply.case_ids)
+                    or len(set(reply.case_ids)) != len(reply.case_ids)
+                    or not set(reply.case_ids).issubset(allowed)):
                 raise ProviderUnavailable("공급자 응답/출처 검증 실패")
-            body = reply.text[:1000]
+            body = reply.text.strip()
             cited = tuple(item for item in evidence if item['id'] in reply.case_ids)
             if cited:
                 body += "\n출처: " + " ".join(source_link(item) for item in cited)
+            generated = reply.text.strip()
         except (ProviderUnavailable, asyncio.TimeoutError) as exc:
             body = "공급자 비활성 또는 응답/출처 검증 실패: 생성 답변 없음"
             if isinstance(self.provider, DisabledCodex):
@@ -58,4 +65,8 @@ class Service:
             # Do not return provider exception strings: they can contain secrets.
             body = "공급자 오류: 생성 답변을 제공하지 않았습니다."
         pending.check()
+        if generated is not None:
+            # Outside the provider error handler: storage failure is not success.
+            self.store.save_generated_answer(s, case, generated, pending,
+                                             tuple(item['id'] for item in evidence))
         return Answer(case, f"후보 사례 #{case} (자동 학습 아님)\n{body}", evidence)
