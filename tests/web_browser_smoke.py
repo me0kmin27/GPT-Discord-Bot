@@ -29,6 +29,14 @@ def main():
         runtime.write_text(json.dumps({'provider': 'codex-oauth', 'sync_guild': 123456789,
                                        'codex': {'model': 'synthetic-model', 'model_reasoning_effort': 'low'}}))
         runtime.chmod(0o600)
+        paths.data.mkdir(mode=0o700)
+        (paths.data/'codex').mkdir(mode=0o700)
+        sensitive = {paths.config/'credentials.json': b'synthetic-token-do-not-display',
+                     paths.data/'codex'/'auth.json': b'synthetic-oauth-do-not-display',
+                     paths.data/'state.db': b'synthetic-db-do-not-open'}
+        for target, content in sensitive.items():
+            target.write_bytes(content)
+            target.chmod(0o600)
         password = secrets.token_urlsafe(24)
         bootstrap_admin(paths, password)
         cli = [sys.executable, '-m', 'helperbot.manage', '--config-dir', str(paths.config),
@@ -67,6 +75,8 @@ def main():
                 page.on('request', lambda req: requests.append(req.url))
                 def shot(name):
                     path = evidence/(name+'.png')
+                    content = page.content()
+                    assert all(value.decode() not in content for value in sensitive.values())
                     page.screenshot(path=str(path), full_page=True)
                     shots.append(path.name)
                 page.goto(base)
@@ -116,11 +126,12 @@ def main():
                 page.wait_for_url(base+'/login')
                 assert all(url.startswith(base+'/') for url in requests)
                 browser.close()
-            assert not paths.data.exists(), 'GUI must never create/open the bot data DB'
+            assert all(target.read_bytes() == content for target, content in sensitive.items())
+            assert sorted(p.name for p in paths.data.iterdir()) == ['codex', 'state.db']
             manifest = {'synthetic_only': True, 'screenshots': shots, 'count': len(shots),
                         'verified': ['packaged_waitress', 'cli_show_set_readback', 'browser_login_logout',
                                      'gui_save_cli_readback', 'validation_no_write', 'csrf_rejection',
-                                     'restart_confirmation_cancel', 'responsive_390px', 'local_assets_only'],
+                                     'restart_confirmation_cancel', 'responsive_390px', 'local_assets_only', 'synthetic_credentials_auth_db_preserved'],
                         'not_verified': ['live_systemd_restart', 'bot_applied_settings', 'Discord', 'OAuth_inference']}
             (evidence/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
             print(json.dumps(manifest, indent=2))

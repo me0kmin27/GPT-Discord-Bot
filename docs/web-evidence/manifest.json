@@ -19,7 +19,8 @@
     "csrf_rejection",
     "restart_confirmation_cancel",
     "responsive_390px",
-    "local_assets_only"
+    "local_assets_only",
+    "synthetic_credentials_auth_db_preserved"
   ],
   "not_verified": [
     "live_systemd_restart",

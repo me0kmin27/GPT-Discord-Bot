@@ -143,7 +143,7 @@ def create_app(paths, *, port=8765):
     @authenticated
     def settings():
         return render_template('settings.html', config=read_settings(paths), status=service_status(),
-                               message='설정 저장 완료. 실행 중인 봇에는 아직 적용되지 않았습니다.' if session.pop('saved', False) else None)
+                               message='설정 저장 완료. 자동 적용이나 봇 재시작은 수행하지 않았습니다.' if session.pop('saved', False) else None)
 
     @app.post('/save')
     @authenticated
