@@ -1,5 +1,13 @@
 # 검증 범위 및 인계
 
+> **현재 구현 정정:** `codex-oauth`는 명시적 로컬 선택으로 실제 실행됩니다. 기본값만
+> `disabled-codex`이며 고정 readiness 거절/zero-tools 선행 조건은 제거했습니다.
+> 제한은 도구 영향을 줄일 뿐 도구 0개나 호스트 파일 읽기 격리를 보증하지 않습니다.
+> PR12의 생성 답변 영속 저장도 통합했습니다. 기존 아래 마일스톤 수치·고정 gate
+> 표현은 당시 기록이며 현재 계약은 [CODEX_TRANSPORT.md](CODEX_TRANSPORT.md)를 따릅니다.
+> 실제 앱 로그인/라이브 추론·공개 hosted 허가·배포는 수행하지 않았습니다.
+
+
 ## 현재 증거 기준 — PR #2–#7 병합 후
 
 - main `7f9f5ee6dd6b494ad2163b069e05a846d0c90061`; 원격 run `38556271591`의 headSha 일치 및 Python 3.11/3.12, systemd normal/failure-recovery 네 job 성공 재조회. 과거 PR별 정확한 최종 head/merge는 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)에 정리했습니다.

@@ -115,7 +115,8 @@ def install_codex(paths, *, runner=subprocess.run):
         raise ManagementError('Install Node.js/npm first, or install official Codex CLI separately')
     private_dir(paths.data)
     prefix = private_dir(paths.data / 'tools')
-    return runner([npm, 'install', '--prefix', str(prefix), '--no-audit', '--no-fund', '@openai/codex']).returncode
+    from .codex_transport import CODEX_VERSION
+    return runner([npm, 'install', '--prefix', str(prefix), '--no-audit', '--no-fund', '@openai/codex@' + CODEX_VERSION]).returncode
 
 
 def codex_login(paths, *, browser=False, runner=subprocess.run):
@@ -125,15 +126,18 @@ def codex_login(paths, *, browser=False, runner=subprocess.run):
     executable = str(local) if local.is_file() else shutil.which('codex')
     if not executable:
         raise ManagementError('Codex CLI not installed; run discord-helper install-codex first')
-    env = {key: os.environ[key] for key in ('PATH', 'HOME', 'LANG', 'TERM') if key in os.environ}
+    login_home = private_dir(paths.data / 'login-home')
+    env = {key: os.environ[key] for key in ('PATH', 'LANG', 'TERM') if key in os.environ}
+    env['HOME'] = str(login_home)
     env['CODEX_HOME'] = str(home)
-    command = [executable, '-c', 'cli_auth_credentials_store="file"', 'login']
+    command = [executable, '-c', 'cli_auth_credentials_store="file"',
+               '-c', 'forced_login_method="chatgpt"', 'login']
     if not browser:
         command.append('--device-auth')
     print('Official Codex login in isolated app home. Public live provider remains DISABLED.')
     old_mask = os.umask(0o077)
     try:
-        return runner(command, env=env).returncode
+        return runner(command, env=env, cwd=login_home).returncode
     finally:
         os.umask(old_mask)
 

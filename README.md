@@ -6,8 +6,8 @@
 
 - Python / discord.py / SQLite로 실제 사례 저장·확정·조회·삭제 및 Discord 슬래시 명령을 구현했습니다.
 - 최초 지식은 **0건**입니다. 사전 구축 코퍼스나 채팅 기록 전체 수집은 없습니다.
-- 현재 `/ask`는 질문과 어휘가 일치하는 사용자 확정 사례를 순위화하여 출처와 함께 보여줍니다. **Codex 생성은 항상 비활성**이며, 검색 결과를 AI 답변으로 가장하지 않습니다.
-- Codex 로그인 도구는 제공하지만, 로그인 성공이 공개 다중 사용자 서비스 사용 허용이나 안전한 무도구 연동을 증명하지 않습니다. 개인 구독 재공유 가능 여부, 격리/무도구 강제, 공급자 정책 검증 전에는 실시간 공급자를 열지 않습니다. OpenAI API 키는 요구하지 않습니다.
+- 기본 `/ask`는 사용자 확정 사례를 순위화하여 출처와 함께 보여줍니다. **기본 공급자는 비활성**이지만 운영자가 `run --provider codex-oauth`를 명시하면 공식 앱 전용 OAuth transport가 실행됩니다. 무조건 거절하는 readiness gate는 없습니다.
+- 로그인 성공은 공개 다중 사용자 호스팅 허가나 무도구 보증이 아닙니다. 로컬 실행 제한은 도구의 영향을 줄일 뿐 zero-tools를 보증하지 않습니다. 실제 로그인/추론 검증과 공개 hosted 이용조건·배포 승인은 별도입니다. OpenAI API 키는 요구하지 않습니다.
 
 ## Linux 빠른 설치
 
@@ -38,10 +38,10 @@ discord-helper codex-login
 discord-helper codex-login --browser
 ```
 
-- 공식 `@openai/codex` 패키지를 사용자 데이터 디렉터리 아래 npm prefix에 설치합니다. `sudo`/전역 npm 설치는 하지 않습니다. 이 명령은 실행 시 npm의 배포 버전을 설치하므로 변경 사항을 검토하세요.
+- 공식 `@openai/codex` 패키지를 사용자 데이터 디렉터리 아래 npm prefix에 설치합니다. `sudo`/전역 npm 설치는 하지 않습니다. 버전은 검증한 `@openai/codex@0.162.1`로 고정합니다.
 - 공식 `codex -c 'cli_auth_credentials_store="file"' login --device-auth`에 직접 위임합니다. 기기 코드 로그인을 계정/워크스페이스 보안 설정에서 허용해야 할 수 있습니다. 로그인은 운영자의 터미널과 공식 브라우저에서 직접 수행합니다. 코드/비밀번호/OAuth 토큰을 채팅에 보내지 마세요.
-- `CODEX_HOME`은 이 앱 전용 디렉터리로 지정하며 API 키 환경 변수는 로그인 자식 프로세스에 전달하지 않습니다. 기존 `~/.codex`/Hermes 인증을 읽거나 복사하지 않습니다. Codex 인증 캐시도 봇 실행 시 읽지 않습니다.
-- **현재 봇은 이 로그인으로 모델을 호출하지 않습니다.** 공식 app-server stdio transport는 구현했고 인증 없는 실제 binary handshake와 subprocess fixture로 검증합니다. 전체 무도구 강제가 검증되지 않아 고정 readiness gate와 기본 DisabledCodex를 유지합니다. [구현·실제 probe·남은 gate](docs/CODEX_TRANSPORT.md)를 보세요. 로그인 없이도 로컬 사례 기능을 사용할 수 있습니다.
+- `CODEX_HOME`은 이 앱 전용 디렉터리이며 API 키 환경 변수는 자식에 전달하지 않습니다. 기존 `~/.codex`/Hermes 인증을 읽거나 복사하지 않습니다. 명시적으로 선택한 `codex-oauth`의 공식 프로세스만 앱 인증을 읽고 갱신합니다.
+- **실행 선택:** `discord-helper run --provider codex-oauth` (`--check`를 추가하면 인증/네트워크 없는 구성 점검). 로그인과 실행에서 동일한 `--data-dir`를 사용하세요. [고정 버전 설치·로그인 준비·실행 제한·실제 probe](docs/CODEX_TRANSPORT.md)를 확인하세요. 로그인이나 서비스 설치만으로 공급자가 활성화되지는 않으며, 기본 systemd 서비스도 비활성 공급자를 유지합니다.
 
 ### Discord 토큰 설정 → 시작 → 상태/로그 → 중지
 
@@ -207,7 +207,7 @@ discord-helper --config-dir "$PWD/.runtime/check/config" --data-dir "$PWD/.runti
 ## 공개 서비스 이전의 차단 항목
 
 1. 독립 코드 검토 및 최종 브랜치 테스트/CI 통과.
-2. **Codex login OAuth는 확정 요구**이며 공식 transport 구현/오프라인 검증은 진행합니다. [구현 상태](docs/CODEX_TRANSPORT.md)와 [공식 기술·운영 조건 조사](docs/CODEX_OAUTH_DECISION.md)를 구별하세요. 무도구·격리 gate, 실제 인증/추론 검증과 공개 hosted 이용조건을 충족하기 전 **활성화/배포하지 않습니다**. API 키나 SIWC로 묵시 전환하지 않습니다.
+2. **Codex login OAuth는 확정 요구**이며 로컬 transport는 명시적으로 선택할 수 있습니다. [구현 상태·제한](docs/CODEX_TRANSPORT.md)과 [운영 조건 조사](docs/CODEX_OAUTH_DECISION.md)를 구별하세요. 별도 승인된 앱 로그인/실제 추론 검증과 공개 hosted 이용조건·배포 허가는 아직 완료하지 않았습니다. API 키나 SIWC로 묵시 전환하지 않습니다.
 3. Discord 테스트 서버에서 설치/동기화/권한 변경/삭제 이벤트/공개 스레드 실검증.
 4. 실제 user-systemd **오프라인 fixture** 수명주기는 CI에서 검증했습니다. 지정된 운영 대상의 실제 봇 ExecStart/비밀 저장·복구/선택한 부팅 지속성은 여전히 미검증입니다.
 5. 단일 프로세스 요청 속도/동시 실행 제한은 구현했습니다. tenant별 사례 수 상한 외 전체 저장량/보존기간, 분산 운영 제한, 모니터링, DB 마이그레이션/백업, 오프라인 삭제 재조정은 남아 있습니다. 현재 버전을 무제한 공개 서비스로 배포하지 마세요.

@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import signal
+import stat
 import platform
 from collections import deque
 from pathlib import Path
@@ -144,6 +145,14 @@ class CodexOAuthProvider:
         from .manage import private_dir
         data = private_dir(self.data)
         codex_home = private_dir(data / 'codex')  # Same home as official codex-login.
+        auth = codex_home / 'auth.json'
+        if auth.is_symlink():
+            raise ProviderUnavailable('Codex application auth must not be symlinked')
+        if auth.exists():
+            metadata = auth.stat()
+            if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+                    or metadata.st_mode & 0o077):
+                raise ProviderUnavailable('Codex application auth requires private owner-only file')
         if (codex_home / 'config.toml').exists() or (codex_home / 'config.toml').is_symlink():
             raise ProviderUnavailable('Codex application home must not contain operator configuration')
         with TemporaryDirectory(prefix='request-', dir=data) as directory:

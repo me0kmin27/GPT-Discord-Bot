@@ -11,8 +11,7 @@ from test_generated_answers import SCOPE, TEXT
 
 
 async def test_stdio_candidate_restart_manual_resolved_retrieval_privacy_and_reopen(tmp_path, monkeypatch):
-    # Test-only replacement: deployed readiness gate and DisabledCodex stay unchanged.
-    monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
+    # Only the executable is a fixture; public answer() and storage are real.
     fixture = Path(__file__).with_name('generated_answer_protocol_fixture.py')
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command', lambda self: (sys.executable, str(fixture)))
     class RecordingTransport(transport.CodexOAuthProvider):
@@ -60,3 +59,25 @@ async def test_stdio_candidate_restart_manual_resolved_retrieval_privacy_and_reo
     assert store.db.execute('PRAGMA foreign_key_check').fetchall() == []
     store.close()
     assert not list((tmp_path / 'provider').glob('request-*'))
+
+
+async def test_selected_provider_reaches_real_ask_callback_and_persists(tmp_path, monkeypatch):
+    from helperbot.provider import build_provider
+    fixture = Path(__file__).with_name('generated_answer_protocol_fixture.py')
+    monkeypatch.setattr(transport.CodexOAuthProvider, '_command', lambda self: (sys.executable, str(fixture)))
+    provider = build_provider('codex-oauth', executable=Path(sys.executable), data=tmp_path / 'provider')
+    store = Store(tmp_path / 'state.db')
+    store.configure(SCOPE, True)
+    client = create_client(store, provider=provider)
+    receipt = interaction(thread=True, channel=12)
+    receipt.original_response.return_value.id = 501
+    try:
+        await client.tree.get_command('ask').callback(receipt, question='capacitor question')
+        receipt.edit_original_response.assert_awaited_once()
+        assert TEXT in receipt.edit_original_response.call_args.kwargs['content']
+        row = store.db.execute('SELECT id FROM cases').fetchone()
+        assert store.generated_answer(SCOPE, row[0]) == TEXT
+        assert store.knowledge(SCOPE) == []
+    finally:
+        await client.close()
+        store.close()

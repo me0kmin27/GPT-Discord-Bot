@@ -114,7 +114,7 @@ for line in sys.stdin:
         params = message['params']
         assert params['threadId'] == 'fixture-thread'
         data = json.loads(params['input'][0]['text'])
-        assert data['question'] == 'synthetic question'
+        assert data['question'] == ('capacitor question' if SCENARIO == 'storage' else 'synthetic question')
         assert 'tenant' not in data
         assert params['outputSchema']['additionalProperties'] is False
         assert params['sandboxPolicy'] == {'type': 'readOnly', 'networkAccess': False}
@@ -123,6 +123,9 @@ for line in sys.stdin:
               'status': 'inProgress', 'items': []}}})
         text = json.dumps({'text': 'fixture answer, NOT live AI',
                            'case_ids': [data['evidence'][0]['id']] if data['evidence'] else []})
+        if SCENARIO == 'storage':
+            text = json.dumps({'text': 'Synthetic capacitor answer — NOT live AI',
+                               'case_ids': [row['id'] for row in data['evidence']]})
         if SCENARIO == 'bad_citation':
             text = json.dumps({'text': 'fixture', 'case_ids': [999]})
         if SCENARIO == 'bool_citation':

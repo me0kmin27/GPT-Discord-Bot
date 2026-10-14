@@ -46,6 +46,8 @@ def test_selection_is_explicit(tmp_path):
     actual = build_provider('codex-oauth', data=tmp_path, executable=Path(sys.executable))
     assert isinstance(actual, CodexOAuthProvider)
     with pytest.raises(ValueError):
+        build_provider('codex-oauth', data=Path('relative'), executable=Path(sys.executable))
+    with pytest.raises(ValueError):
         build_provider('invented')
     with pytest.raises(ValueError):
         build_provider('codex-oauth')
@@ -62,4 +64,12 @@ async def test_operator_config_cannot_inject_tools(tmp_path):
     home.mkdir()
     (home / 'config.toml').write_text('[mcp_servers.never]\ncommand="false"\n')
     with pytest.raises(ProviderUnavailable, match='configuration'):
+        await CodexOAuthProvider(Path(sys.executable), tmp_path).answer(Request((1, 2), 'q', (), ()))
+
+
+async def test_symlink_auth_is_not_followed(tmp_path):
+    home = tmp_path / 'codex'
+    home.mkdir()
+    (home / 'auth.json').symlink_to(tmp_path / 'nonexistent-unrelated-auth')
+    with pytest.raises(ProviderUnavailable, match='auth'):
         await CodexOAuthProvider(Path(sys.executable), tmp_path).answer(Request((1, 2), 'q', (), ()))
