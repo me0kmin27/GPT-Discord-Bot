@@ -1,5 +1,15 @@
 # 로컬 첫 마일스톤
 
+## 후속 PR: 실제 Linux 사용자 systemd lifecycle
+
+- 기반 PR #4 `18e0fbc6ea06ece4042ef7a6120ad81c5abffbb1`; 별도 `GPT-Discord-Bot-systemd` worktree/`ci/linux-user-service`. 기존 worktree 보존.
+- production Python/CLI/unit 기본값 변경 없음. 테스트 전용 executable/drop-in으로 Discord 실행만 대체하고 실제 설치 console CLI와 실제 systemctl/user manager를 실행합니다.
+- GitHub-hosted Ubuntu 24.04에 일회용 비-root 계정/user manager를 생성합니다. linger/enable 없이 종료 trap과 `always()` cleanup으로 manager/계정/home/runtime을 제거합니다. 기존 사용자 서비스는 건드리지 않습니다.
+- 재설치 bytes/inode/mtime 보존, 미시작/미활성화, start/status/restart/stop 상태·PID·SIGTERM acknowledgement, inactive status exit=3, 중복 stop 및 unit 제거 readback을 검사합니다.
+- macOS 로컬: **175 passed, 1 skipped**, bash syntax/compileall/diff 검사 통과. pip 21 editable 설치 실패 후 일반 wheel 설치로 검증했습니다. Linux 실제 결과는 push 뒤 CI 로그와 exact head로 별도 확인합니다.
+- fixture lifecycle은 실제 봇 준비 완료가 아닙니다. Discord/Codex 로그인·네트워크·실서버 배포·병합 없음. 공급자 차단 유지. CI 의존성 설치에는 패키지 다운로드가 필요합니다.
+
+
 - 공개 원격 저장소가 비어 있음을 확인하고 로컬 복제했습니다.
 - 범위: SQLite 지식/권한 코어, Discord 명령 연결, 오프라인 자동 테스트.
 - 추가 승인 범위: Linux 사용자 systemd 설치/설정/시작/중지/상태/로그 CLI 및 분리된 Codex 로그인 위임.

@@ -1,5 +1,15 @@
 # 검증 범위 및 인계
 
+## 실제 user-systemd fixture 검증 (후속 CI)
+
+- `.github/workflows/ci.yml`의 `systemd-lifecycle`은 mock systemctl 없이 별도 일회용 사용자와 실제 `user@UID.service`를 사용합니다. runner에 로그인 세션이 없어도 테스트 계정의 manager를 명시적으로 시작하며, 실패는 skip/성공으로 위장하지 않습니다.
+- `tests/systemd_lifecycle.py`: 설치된 `discord-helper` entry point로 install 두 번/start/status/restart/stop 호출. 원본 unit은 `unit_text(Paths)`와 완전히 같고 테스트 후에도 변하지 않습니다. fixture drop-in은 ExecStart만 stdlib 대기 프로세스로 바꾸고 AF_UNIX만 허용합니다. 공백/%/$ 경로, FragmentPath/DropInPaths, 상태/PID와 실제 SIGTERM 종료 기록을 확인합니다.
+- `tests/systemd_fixture.py`는 네트워크/Discord/Codex를 호출하지 않습니다. management 자식 환경은 `env -i` allowlist이며 운영 인증 파일을 읽지 않습니다. credentials.json/state.db가 생기지 않음을 검사합니다.
+- `tests/run_systemd_ci.sh`: GitHub-hosted Linux만 허용, 중복 계정 거절, 별도 UID manager 사용, enable/linger 없음. Python finally에서 stop/unit/drop-in 삭제 및 LoadState=not-found 확인. shell trap에서 manager/account/home/runtime 제거 확인. workflow `always()`는 실패/취소 후 추가 cleanup 경로입니다. runner 자체 강제 소멸은 코드 cleanup을 보장할 수 없으므로 hosted disposable runner만 사용합니다.
+- 기존 단위 테스트의 systemctl 대역과 이 실제 통합 테스트를 구분합니다. live 봇 ExecStart 실행/토큰 로딩/Discord 연결·명령 권한·Codex 로그인·운영 재부팅 자동기동·실사용자 lingering은 이 검증의 범위 밖입니다. production 소스 변경이 없어 새 runtime flag나 TDD 대상 production 구현도 없습니다.
+- 로컬 회귀: 175 passed, 1 skipped (macOS systemd parser 없음). Linux CI 통과는 최종 SHA의 실제 로그를 읽은 뒤 PR/인계에서 확정합니다.
+
+
 ## 로컬 실행 증거
 
 - `python -m pytest -q --basetemp=.runtime/pytest`: **105 passed, 1 skipped** (macOS Python 3.9.6, receipt-race 수정 후).
