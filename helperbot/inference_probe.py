@@ -70,8 +70,26 @@ def safe_failure(error):
     rpc_code = getattr(error, 'rpc_code', None) if isinstance(error, ProviderUnavailable) else None
     if type(rpc_code) is not int or not -(2**31) <= rpc_code < 2**31:
         rpc_code = None
-    return {'stage': stage, 'category': category, 'exception': exception,
-            'rpc_code': rpc_code, 'http_status': None, 'locations': locations[-8:]}
+    timing: dict = {'timeout_origin': None, 'elapsed_ms': None, 'deadline_ms': None}
+    if isinstance(error, (TimeoutError, asyncio.TimeoutError)):
+        # Keep the standalone probe compatible with older installed helpers.
+        from helperbot import async_utils
+        owned_type = getattr(async_utils, 'OwnedDeadlineExceeded', None)
+        observed_type = getattr(async_utils, 'ObservedTimeout', None)
+        timing['timeout_origin'] = 'child_or_native'
+        if type(error) in (owned_type, observed_type):
+            if type(error) is owned_type:
+                category = 'deadline_exceeded'
+                timing['timeout_origin'] = 'owned'
+            observed_stage = getattr(error, 'stage', None)
+            if type(observed_stage) is str and observed_stage in ('wait', 'service', 'provider', 'transport', 'preparation', 'generation'):
+                stage = observed_stage
+            for key in ('elapsed_ms', 'deadline_ms'):
+                value = getattr(error, key, None)
+                if type(value) is int and 0 <= value <= 86400000:
+                    timing[key] = value
+    return dict({'stage': stage, 'category': category, 'exception': exception,
+                 'rpc_code': rpc_code, 'http_status': None, 'locations': locations[-8:]}, **timing)
 
 
 class SafeParser(argparse.ArgumentParser):
@@ -102,7 +120,8 @@ def main(argv=None):
             provider = build_provider('codex-oauth', data=data.absolute())
             async def invoke():
                 return await wait_owned(provider.answer(Request((1, 2),
-                    'What is two plus two? Reply briefly.', (), ())), 20)
+                    'What is two plus two? Reply briefly.', (), ())),
+                    None if getattr(provider, 'manages_deadlines', False) is True else 20)
             reply = asyncio.run(invoke())
             if (type(reply.text) is not str or not reply.text.strip() or len(reply.text) > 1000
                     or '\x00' in reply.text or not isinstance(reply.case_ids, (tuple, list)) or reply.case_ids):

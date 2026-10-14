@@ -127,7 +127,10 @@ No partial text is published before terminal success and source/output validatio
 
 All non-message/reasoning items and unsupported notifications are rejected. Errors
 are sanitized; child stderr and server payloads are not logged. Each request has a
-20-second default deadline. Completion, errors, timeout and cancellation kill the
+preparation budget of up to 3 seconds followed by a fresh 20-second generation
+budget by default (including turn/start and hosted search), not a fixed startup
+sleep. See [shared configuration and diagnostics](timeout-contract.md). Cleanup is
+outside these cooperative work budgets. Completion, errors, timeout and cancellation kill the
 owned POSIX process group and reap/drain its child, including cancellation during
 spawn and repeated cancellation during cleanup. Privacy invalidation discards late
 results and prevents persistence/revival; it cannot retract already-sent remote

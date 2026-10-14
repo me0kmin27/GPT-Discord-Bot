@@ -10,13 +10,16 @@ import signal
 import stat
 import platform
 from collections import deque
+from contextlib import AsyncExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .provider import ProviderReply, ProviderUnavailable
-from .async_utils import wait_owned
+from .async_utils import OwnedDeadlineExceeded, wait_owned
 
 CODEX_VERSION = '0.162.1'
+DEFAULT_SETUP_TIMEOUT = 3
+DEFAULT_GENERATION_TIMEOUT = 20
 MAX_FRAME = 65536
 MAX_WIRE = 1048576
 MAX_EVENTS = 2048
@@ -34,9 +37,15 @@ def validate_options(options=None):
     if options is None:
         return {}
     if not isinstance(options, dict) or not set(options) <= {
-            'web_search', 'model', 'model_reasoning_effort'}:
+            'web_search', 'model', 'model_reasoning_effort',
+            'setup_timeout_seconds', 'generation_timeout_seconds'}:
         raise ValueError('Invalid Codex operator options')
     for key, value in options.items():
+        if key in ('setup_timeout_seconds', 'generation_timeout_seconds'):
+            ceiling = 30 if key == 'setup_timeout_seconds' else 120
+            if type(value) not in (int, float) or not 0 < value <= ceiling:
+                raise ValueError('Invalid Codex timeout')
+            continue
         if (not isinstance(value, str) or not 0 < len(value) <= 128
                 or any(not (c.isascii() and (c.isalnum() or c in '._-/')) for c in value)
                 or (key == 'web_search' and value not in ('disabled', 'live'))):
@@ -67,7 +76,8 @@ def execution_config(options=None):
                     'shell_snapshot', 'hooks', 'memories', 'request_permissions_tool'):
         config['features.' + feature] = False
     config['features.skip_host_skill_discovery'] = True
-    config.update(validate_options(options))
+    config.update({key: value for key, value in validate_options(options).items()
+                   if key not in ('setup_timeout_seconds', 'generation_timeout_seconds')})
     return config
 
 
@@ -158,15 +168,21 @@ def render_web_sources(reply, searched):
 
 class CodexOAuthProvider:
     """Local managed OAuth with bounded, isolated request processes."""
-    def __init__(self, executable, data, *, timeout=20, options=None):
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:
+    manages_deadlines = True
+
+    def __init__(self, executable, data, *, timeout=DEFAULT_GENERATION_TIMEOUT,
+                 setup_timeout=DEFAULT_SETUP_TIMEOUT, options=None):
+        if type(timeout) not in (int, float) or not 0 < timeout <= 120:
+            raise ValueError('Invalid Codex timeout')
+        if type(setup_timeout) not in (int, float) or not 0 < setup_timeout <= 30:
             raise ValueError('Invalid Codex timeout')
         self.options = validate_options(options)
         self.executable = Path(executable)
         self.data = Path(data)
         if not self.executable.is_absolute() or not self.data.is_absolute():
             raise ValueError('Codex executable and data paths must be absolute')
-        self.timeout = timeout
+        self.timeout = self.options.get('generation_timeout_seconds', timeout)
+        self.setup_timeout = self.options.get('setup_timeout_seconds', setup_timeout)
 
     def _command(self):
         return command_for(self.executable, self.options)
@@ -176,13 +192,26 @@ class CodexOAuthProvider:
         if platform.system() not in ('Darwin', 'Linux'):
             raise ProviderUnavailable('Codex requires a supported POSIX sandbox platform')
         try:
-            return await wait_owned(self._answer(request, payload), self.timeout)
-        except asyncio.TimeoutError:
+            # Each phase owns its budget; this wrapper owns cancellation/cleanup,
+            # not a competing total timer that could steal generation time.
+            return await wait_owned(self._answer(request, payload), None)
+        except (asyncio.TimeoutError, TimeoutError):
             raise
         except (KeyError, TypeError, ValueError, OSError, AttributeError):
             raise ProviderUnavailable('Codex transport unavailable') from None
 
     async def _answer(self, request, payload):
+        async with AsyncExitStack() as stack:
+            client, thread_id, web_search = await wait_owned(
+                self._prepare(request, stack), self.setup_timeout, stage='preparation')
+            # Begin a new absolute transport budget; notifications/RPCs never reset it.
+            client.timeout = self.timeout
+            client.deadline_stage = 'generation'
+            client.deadline = asyncio.get_running_loop().time() + self.timeout
+            return await wait_owned(self._generate(client, thread_id, web_search, request, payload),
+                                    self.timeout, stage='generation')
+
+    async def _prepare(self, request, stack):
         # Runtime isolation is defense in depth, NOT a no-tools boundary.
         from .manage import private_dir
         data = private_dir(self.data)
@@ -197,66 +226,71 @@ class CodexOAuthProvider:
                 raise ProviderUnavailable('Codex application auth requires private owner-only file')
         if (codex_home / 'config.toml').exists() or (codex_home / 'config.toml').is_symlink():
             raise ProviderUnavailable('Codex application home must not contain operator configuration')
-        with TemporaryDirectory(prefix='request-', dir=data) as directory:
-            root = Path(directory)
-            home = private_dir(root / 'home')
-            cwd = private_dir(root / 'work')
-            env = {'HOME': str(home), 'CODEX_HOME': str(codex_home),
-                   'PATH': os.defpath, 'LANG': 'C.UTF-8', 'TMPDIR': str(root)}
-            web_search = self.options.get('web_search') == 'live'
-            instruction = request.instruction + (
-                " Only hosted web search is permitted; use it for current facts/weather. "
-                "Never use shell, files, local network, MCP or other tools. "
-                "Minimize search queries; do not send private history/evidence to search. "
-                "Return web_sources as at most 3 HTTP(S) source URLs actually used, "
-                "not citation tokens; keep answer plus URLs below 900 characters. "
-                "Web sources are not verified cases. If search is unavailable or insufficient, "
-                "say current facts cannot be verified; never invent sources or current weather."
-                if web_search else " Do not execute tools.")
-            async with StdioClient(self._command(), cwd=cwd, env=env, timeout=self.timeout,
-                                   web_search=web_search) as client:
-                await client.initialize()
-                resolved = await client.rpc('config/read', {'includeLayers': False})
-                validate_config(resolved['config'], self.options)
-                account = await client.rpc('account/read', {'refreshToken': False})
-                if (account.get('account') or {}).get('type') != 'chatgpt':
-                    raise ProviderUnavailable('Codex managed ChatGPT login required')
-                thread = await client.rpc('thread/start', {
-                    'ephemeral': True, 'cwd': str(cwd), 'sandbox': 'read-only',
-                    'approvalPolicy': 'never', 'approvalsReviewer': 'user',
-                    'developerInstructions': instruction})
-                thread_id = thread['thread']['id']
-                if thread['thread'].get('ephemeral') is not True or thread['thread'].get('path') is not None:
-                    raise ProviderUnavailable('Codex ephemeral thread required')
-                if (thread.get('sandbox') != {'type': 'readOnly', 'networkAccess': False}
-                        or thread.get('approvalPolicy') != 'never'
-                        or thread.get('approvalsReviewer') != 'user'
-                        or thread.get('cwd') != str(cwd)
-                        or thread.get('modelProvider') != 'openai'):
-                    raise ProviderUnavailable('Codex effective thread restrictions rejected')
-                schema = {'type': 'object', 'additionalProperties': False,
-                          'required': ['text', 'case_ids'], 'properties': {
-                              'text': {'type': 'string'},
-                              'case_ids': {'type': 'array', 'items': {'type': 'integer'}}}}
-                if web_search:
-                    schema['required'].append('web_sources')
-                    schema['properties']['web_sources'] = {
-                        'type': 'array', 'items': {'type': 'string'}}
-                turn = await client.rpc('turn/start', {
-                    'threadId': thread_id, 'input': [{'type': 'text', 'text': payload}],
-                    'sandboxPolicy': {'type': 'readOnly', 'networkAccess': False},
-                    'approvalPolicy': 'never',
-                    'outputSchema': schema})
-                return await client.completion(thread_id, turn['turn']['id'], request.evidence)
+        directory = stack.enter_context(TemporaryDirectory(prefix='request-', dir=data))
+        root = Path(directory)
+        home = private_dir(root / 'home')
+        cwd = private_dir(root / 'work')
+        env = {'HOME': str(home), 'CODEX_HOME': str(codex_home),
+               'PATH': os.defpath, 'LANG': 'C.UTF-8', 'TMPDIR': str(root)}
+        web_search = self.options.get('web_search') == 'live'
+        instruction = request.instruction + (
+            " Only hosted web search is permitted; use it for current facts/weather. "
+            "Never use shell, files, local network, MCP or other tools. "
+            "Minimize search queries; do not send private history/evidence to search. "
+            "Return web_sources as at most 3 HTTP(S) source URLs actually used, "
+            "not citation tokens; keep answer plus URLs below 900 characters. "
+            "Web sources are not verified cases. If search is unavailable or insufficient, "
+            "say current facts cannot be verified; never invent sources or current weather."
+            if web_search else " Do not execute tools.")
+        client = await stack.enter_async_context(StdioClient(
+            self._command(), cwd=cwd, env=env, timeout=self.setup_timeout,
+            web_search=web_search, deadline_stage='preparation'))
+        await client.initialize()
+        resolved = await client.rpc('config/read', {'includeLayers': False})
+        validate_config(resolved['config'], self.options)
+        account = await client.rpc('account/read', {'refreshToken': False})
+        if (account.get('account') or {}).get('type') != 'chatgpt':
+            raise ProviderUnavailable('Codex managed ChatGPT login required')
+        thread = await client.rpc('thread/start', {
+            'ephemeral': True, 'cwd': str(cwd), 'sandbox': 'read-only',
+            'approvalPolicy': 'never', 'approvalsReviewer': 'user',
+            'developerInstructions': instruction})
+        thread_id = thread['thread']['id']
+        if thread['thread'].get('ephemeral') is not True or thread['thread'].get('path') is not None:
+            raise ProviderUnavailable('Codex ephemeral thread required')
+        if (thread.get('sandbox') != {'type': 'readOnly', 'networkAccess': False}
+                or thread.get('approvalPolicy') != 'never'
+                or thread.get('approvalsReviewer') != 'user'
+                or thread.get('cwd') != str(cwd)
+                or thread.get('modelProvider') != 'openai'):
+            raise ProviderUnavailable('Codex effective thread restrictions rejected')
+        return client, thread_id, web_search
+
+    async def _generate(self, client, thread_id, web_search, request, payload):
+        schema = {'type': 'object', 'additionalProperties': False,
+                  'required': ['text', 'case_ids'], 'properties': {
+                      'text': {'type': 'string'},
+                      'case_ids': {'type': 'array', 'items': {'type': 'integer'}}}}
+        if web_search:
+            schema['required'].append('web_sources')
+            schema['properties']['web_sources'] = {
+                'type': 'array', 'items': {'type': 'string'}}
+        turn = await client.rpc('turn/start', {
+            'threadId': thread_id, 'input': [{'type': 'text', 'text': payload}],
+            'sandboxPolicy': {'type': 'readOnly', 'networkAccess': False},
+            'approvalPolicy': 'never',
+            'outputSchema': schema})
+        return await client.completion(thread_id, turn['turn']['id'], request.evidence)
 
 
 class StdioClient:
     """One bounded sequential JSON-RPC connection; no subprocess shell or logging."""
-    def __init__(self, command, *, cwd, env, timeout=20, web_search=False):
+    def __init__(self, command, *, cwd, env, timeout=20, web_search=False, deadline_stage='transport'):
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:
             raise ValueError('Invalid Codex timeout')
         self.timeout = timeout
         self.deadline = None
+        self.deadline_stage = deadline_stage
         self.command, self.cwd, self.env = command, cwd, env
         self.process = None
         self.sequence = 0
@@ -308,7 +342,8 @@ class StdioClient:
         try:
             done, _ = await asyncio.wait((task,), timeout=remaining)
             if not done:
-                raise asyncio.TimeoutError()
+                elapsed = asyncio.get_running_loop().time() - (self.deadline - self.timeout)
+                raise OwnedDeadlineExceeded(self.deadline_stage, elapsed, self.timeout)
             return task.result()
         finally:
             if not task.done():
@@ -345,7 +380,7 @@ class StdioClient:
                 raise ValueError()
             self.process.stdin.write(frame)
             await self._bounded(self.process.stdin.drain())
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             raise
         except (OSError, ValueError, TypeError):
             raise ProviderUnavailable('Codex request transport failure') from None
@@ -361,7 +396,7 @@ class StdioClient:
             message = json.loads(frame)
             if not isinstance(message, dict):
                 raise ValueError()
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             raise
         except (OSError, ValueError, RecursionError):
             raise ProviderUnavailable('Codex invalid or excessive protocol output') from None
