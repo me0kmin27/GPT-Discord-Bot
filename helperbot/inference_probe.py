@@ -110,6 +110,11 @@ def main(argv=None):
                 raise ProviderUnavailable('Codex response contract rejected')
             record = {'stage': 'complete', 'answer_success': True, 'answer_length': len(reply.text)}
             status = 0
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        record = {'stage': 'answer', 'category': 'cancelled', 'exception': 'Cancelled',
+                  'rpc_code': None, 'http_status': None, 'locations': [],
+                  'answer_success': False, 'answer_length': 0}
+        status = 130
     except Exception as error:
         record = dict(safe_failure(error), answer_success=False, answer_length=0)
         status = 1

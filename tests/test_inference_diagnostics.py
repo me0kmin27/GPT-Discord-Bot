@@ -175,3 +175,16 @@ def test_probe_enforces_original_20_second_deadline(tmp_path, monkeypatch, capsy
     captured = capsys.readouterr()
     assert json.loads(captured.out)['category'] == 'timeout'
     assert 'SECRET' not in captured.out + captured.err
+
+
+def test_probe_interrupt_is_sanitized(tmp_path, monkeypatch, capsys):
+    import json
+    from helperbot import inference_probe, provider
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt('SECRET INTERRUPT')
+    monkeypatch.setattr(provider, 'build_provider', interrupt)
+    assert inference_probe.main(['--live', '--data-dir', str(tmp_path)]) == 130
+    captured = capsys.readouterr()
+    assert captured.err == ''
+    assert json.loads(captured.out)['category'] == 'cancelled'
+    assert 'SECRET' not in captured.out

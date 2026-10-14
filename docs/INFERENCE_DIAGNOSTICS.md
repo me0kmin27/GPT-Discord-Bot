@@ -58,7 +58,7 @@ The deadline remains **20 seconds**; it is not enlarged for this test.
 
 Exit 0 means the synthetic public provider request returned a valid nonempty
 answer with empty citations. Exit 1 is a failed attempt; exit 2 means no opt-in or
-invalid arguments. Fixture successes are explicitly synthetic, not model output.
+invalid arguments; exit 130 is a sanitized interruption. Fixture successes are explicitly synthetic, not model output.
 If the running bot still fails, supply only its fixed diagnostic category and the
 probe JSON. The original bot fallback wording and a fresh no-match Discord request
 remain important to distinguish inference from delivery/persistence failures.
@@ -81,9 +81,19 @@ code retention, fixed service categories, argument errors, missing installation,
 empty-evidence citations, and unchanged 20-second deadline wiring. Existing
 transport tests separately exercise actual subprocess timeout and cleanup.
 
-Full combined local suite: **435 passed, 1 skipped** (macOS/Python 3.9).
+Full combined local suite: **436 passed, 1 skipped** (macOS/Python 3.9).
 A real standalone credential-free run against an archived `f1c0957` installation
 and the pinned official native binary returned exit 1, stage `account`, category
 `login_required`, answer_success false, answer_length 0, duration_ms 374, with
 empty stderr and no auth file created. This verifies the backward-compatible
 operator probe, not successful inference. No existing auth was accessed.
+
+## Runtime drift / follow-up ownership
+
+The parent/operator owns the separately authorized live warning hotfix,
+`gpt-6.1-sol` / low effort override and subsequent web-search request. This PR
+changes none of those settings and must not be deployed as a blind installed-file
+replacement. Preserve/reconcile authorized overrides on upgrade. Persistent
+operator configuration and explicitly opt-in `webSearch` item handling require a
+separate bounded change; this diagnostic does not enable web search or permit
+other tool items. Do not turn the existing tool allowlist into an allow-all list.
