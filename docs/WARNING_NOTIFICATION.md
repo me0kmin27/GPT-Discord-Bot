@@ -34,7 +34,7 @@ their effective-state checks remain authoritative.
   a process-local allowlist-only differential returned validated answer length 2
   in 6.14 seconds using the operator's existing OAuth. This was not a deployment
   and no auth/answer body is recorded here.
-- Minimal fix checkout: `python -m pytest -q` -> **421 passed, 1 skipped** on
+- Minimal fix checkout: `python -m pytest -q` -> **423 passed, 1 skipped** on
   local macOS/Python 3.9. The skip is the existing Linux-only check.
 
 - Parent subsequently reported an operator-authorized installed-file hotfix:
@@ -43,6 +43,14 @@ their effective-state checks remain authoritative.
   prior installed revision, not deployment of this PR. This PR additionally
   validates the warning shape and preserves a non-null thread scope.
 - CI now includes Python 3.13 to match the operator-reported interpreter.
+- The parent also reports an explicitly authorized live-only model/effort
+  override, `model=gpt-6.1-sol` and `model_reasoning_effort=low`, with a separate
+  backup and restart. These are **not** repository defaults and are not included
+  in this patch. A future upgrade must reconcile/preserve both the warning hotfix
+  and these operator settings instead of blindly replacing the installed file.
+  A supported operator model/effort configuration interface is a separate feature;
+  do not globally hardcode an account-specific model. Live verification of that
+  override is owned by the parent/operator, not established by this worker's CI.
 
 ## Public reference
 
