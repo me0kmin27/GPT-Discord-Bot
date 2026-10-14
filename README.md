@@ -36,6 +36,17 @@ discord-helper install
 
 `install`은 현재 Python 경로를 고정한 **사용자 서비스** `discord-helper.service`를 설치하고 `daemon-reload`합니다. 자동 시작/부팅 활성화는 하지 않습니다. 동일한 설치는 반복 가능하며, 다른 내용의 기존 unit이나 인증 파일을 덮어쓰지 않습니다. 저장소/가상환경을 옮겼다면 기존 unit을 검토한 후 다시 설치해야 합니다. PATH 설정 대신 `.venv/bin/discord-helper`를 사용해도 됩니다. `pipx install .` 환경에서도 같은 실행 파일이 생성됩니다.
 
+### 웹 검색 및 모델 선택
+
+현재 정보·날씨용 공식 Codex 웹 검색은 운영자가 `runtime.json`의
+`codex.web_search`를 `live`로 설정해야 활성화됩니다(기본 `disabled`).
+`codex.model`과 `codex.model_reasoning_effort`도 비밀이 아닌 운영 설정으로
+지원합니다. 사용자 요청 예시는 `gpt-6.1-sol` / `low`이며 전역 기본값이 아닙니다.
+[설정·출처 표시·안전 경계·적용/롤백](docs/CODEX_WEB_SEARCH.md)과
+[비밀 없는 예시](examples/runtime.codex-web-search.json)를 참고하세요.
+기존 guild 값은 유지하세요. 셸/로컬 네트워크 권한은 확대하지 않으며 웹 URL은
+모델 인용이지 앱이 독립 검증한 확정 사례가 아닙니다.
+
 ### Codex 설치·로그인 (선택, 추론 활성화와 별개)
 
 Node.js/npm이 있는 환경에서:

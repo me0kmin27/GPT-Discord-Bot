@@ -11,10 +11,14 @@ from helperbot.service import Service
 
 
 @pytest.mark.parametrize('action', ['delete_user', 'reset', 'disable', 'cancel'])
-async def test_late_protocol_completion_cannot_resurrect_deleted_data(tmp_path, monkeypatch, action):
+@pytest.mark.parametrize('web_search', [False, True])
+async def test_late_protocol_completion_cannot_resurrect_deleted_data(tmp_path, monkeypatch, action, web_search):
     fixture = Path(__file__).with_name('codex_protocol_fixture.py')
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
                         lambda self: (sys.executable, str(fixture)))
+    if web_search:
+        monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
+                            lambda self: (sys.executable, str(fixture), 'web_success'))
     completed, release = asyncio.Event(), asyncio.Event()
     processes = []
     original = transport.StdioClient.completion
@@ -28,7 +32,8 @@ async def test_late_protocol_completion_cannot_resurrect_deleted_data(tmp_path, 
     store = Store(tmp_path / 'state.db')
     scope = Scope(1, 10, 10, 100, admin=True)
     store.configure(scope, True)
-    adapter = transport.CodexOAuthProvider(Path(sys.executable), tmp_path / 'runtime')
+    adapter = transport.CodexOAuthProvider(Path(sys.executable), tmp_path / 'runtime',
+        options={'web_search': 'live'} if web_search else None)
     task = asyncio.create_task(Service(store, adapter).ask(scope, 'synthetic question', 501))
     try:
         await asyncio.wait_for(completed.wait(), 2)

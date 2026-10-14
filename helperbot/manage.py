@@ -230,8 +230,15 @@ def runtime_config(paths):
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
                 raise ValueError()
             config = json.load(stream)
-        if set(config) != {'provider', 'sync_guild'} or config['provider'] not in ('disabled-codex', 'codex-oauth'):
+        if (not isinstance(config, dict)
+                or not {'provider', 'sync_guild'} <= set(config) <= {'provider', 'sync_guild', 'codex'}
+                or config['provider'] not in ('disabled-codex', 'codex-oauth')):
             raise ValueError()
+        if 'codex' in config:
+            from .codex_transport import validate_options
+            if not isinstance(config['codex'], dict):
+                raise ValueError()
+            validate_options(config['codex'])
         guild = config['sync_guild']
         if guild is not None and (type(guild) is not int or not 0 < guild < 2**64):
             raise ValueError()
@@ -246,7 +253,8 @@ def run(paths, *, check=False, sync_guild=None, provider_name=None, codex_execut
     provider_name = provider_name if provider_name is not None else config['provider']
     sync_guild = sync_guild if sync_guild is not None else config['sync_guild']
     try:
-        provider = build_provider(provider_name, data=paths.data, executable=codex_executable)
+        provider = build_provider(provider_name, data=paths.data, executable=codex_executable,
+                                  options=config.get('codex'))
     except ValueError as exc:
         raise ManagementError(str(exc)) from None
     token = None if check else (os.environ.get('DISCORD_BOT_TOKEN') or load_token(paths))

@@ -1,0 +1,9 @@
+{
+  "provider": "codex-oauth",
+  "sync_guild": null,
+  "codex": {
+    "web_search": "live",
+    "model": "gpt-6.1-sol",
+    "model_reasoning_effort": "low"
+  }
+}
