@@ -15,6 +15,15 @@ import sys
 import time
 
 
+SERVICE_DIAGNOSIS = (
+    'Service cause not determined. Inspect locally: systemctl --user show discord-helper.service '
+    '--property=ActiveState,SubState,Result,ExecMainStatus,NRestarts; '
+    'then journalctl --user -u discord-helper.service -n 30 --no-pager. '
+    'Share only the structured failure stage, exception category, http_status and discord_code; '
+    'never credentials or raw logs. An active snapshot is not Discord readiness.'
+)
+
+
 class InstallError(RuntimeError):
     pass
 
@@ -23,7 +32,9 @@ def command(args, **kwargs):
     result = subprocess.run([str(a) for a in args], text=True, capture_output=True, **kwargs)
     if result.returncode:
         # Package managers and auth commands may emit secrets from inherited config.
-        raise InstallError('Command failed: ' + Path(str(args[0])).name + '; details suppressed. Fix dependencies/network and rerun.')
+        if Path(str(args[0])).name == 'systemctl':
+            raise InstallError('systemctl failed; output suppressed. ' + SERVICE_DIAGNOSIS)
+        raise InstallError('Command failed; output suppressed. Review the failed installation step locally and rerun; do not share raw output or credentials.')
     return result.stdout.strip()
 
 
@@ -141,7 +152,7 @@ def service_readback():
     command(['systemctl', '--user', 'is-active', '--quiet', 'discord-helper.service'])
     after = command(['systemctl', '--user', 'show', 'discord-helper.service', '--property=MainPID', '--value'])
     if before == '0' or before != after:
-        raise InstallError('Service exited/restarted during startup; inspect status locally and rerun.')
+        raise InstallError('Service exited/restarted during startup. ' + SERVICE_DIAGNOSIS)
 
 
 def finish(paths):
@@ -172,7 +183,7 @@ def finish(paths):
     offline_check(paths)
     m.install(paths)
     if m.lifecycle(paths, 'start') or m.lifecycle(paths, 'status'):
-        raise InstallError('Service start/status failed. Saved configuration preserved; rerun after diagnosis.')
+        raise InstallError('Service start/status failed. Saved configuration preserved. ' + SERVICE_DIAGNOSIS)
     service_readback()
     print('Software installed; ChatGPT login status verified; service active at readback.')
     print('NOT YET VERIFIED: Discord login/invite, command sync, live answer and persistence. Test /channel enabled:true then /ask in the selected guild.')
