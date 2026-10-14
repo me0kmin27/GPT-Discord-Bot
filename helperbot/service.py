@@ -3,6 +3,7 @@ import asyncio
 from dataclasses import dataclass
 from .provider import Request, ProviderUnavailable, DisabledCodex
 from .async_utils import wait_owned
+from .inference_probe import safe_failure
 
 
 @dataclass(frozen=True)
@@ -57,14 +58,18 @@ class Service:
                 body = "Codex 실시간 생성 비활성: 안전한 연동 및 사용 조건 검증 대기"
             elif isinstance(exc, asyncio.TimeoutError):
                 body = "공급자 시간 초과: 생성 답변 없음"
+            failure = safe_failure(exc)
+            body += f"\n진단 [{failure['stage']}/{failure['category']}]: 운영자는 안전한 추론 진단 명령으로 확인하세요."
             body += "\n생성 답변이 아닙니다. 질문과 어휘가 일치하는 이 채널의 확정 사례 (의미/정확성 보증 아님):"
             if not evidence:
                 body += "\n검색 범위에서 일치하는 확정 사례를 찾지 못했습니다. 다른 핵심어로 질문하거나 해결 후 /resolved로 직접 등록하세요."
             for item in evidence:
                 body += f"\n사례 #{item['id']}: {item['solution'][:180]}\n{source_link(item)}"
-        except Exception:
+        except Exception as exc:
             # Do not return provider exception strings: they can contain secrets.
-            body = "공급자 오류: 생성 답변을 제공하지 않았습니다."
+            failure = safe_failure(exc)
+            body = ("공급자 오류: 생성 답변을 제공하지 않았습니다."
+                    f"\n진단 [{failure['stage']}/{failure['category']}]: 운영자는 안전한 추론 진단 명령으로 확인하세요.")
         pending.check()
         if generated is not None:
             # Outside the provider error handler: storage failure is not success.
