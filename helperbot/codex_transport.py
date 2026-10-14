@@ -14,6 +14,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from .provider import ProviderReply, ProviderUnavailable
+from .async_utils import wait_owned
 
 CODEX_VERSION = '0.162.1'
 MAX_FRAME = 65536
@@ -134,7 +135,7 @@ class CodexOAuthProvider:
         if platform.system() not in ('Darwin', 'Linux'):
             raise ProviderUnavailable('Codex requires a supported POSIX sandbox platform')
         try:
-            return await asyncio.wait_for(self._answer(request, payload), self.timeout)
+            return await wait_owned(self._answer(request, payload), self.timeout)
         except asyncio.TimeoutError:
             raise
         except (KeyError, TypeError, ValueError, OSError, AttributeError):
