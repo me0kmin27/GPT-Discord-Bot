@@ -9,7 +9,16 @@
 - 기본 `/ask`는 사용자 확정 사례를 순위화하여 출처와 함께 보여줍니다. **기본 공급자는 비활성**이지만 운영자가 `run --provider codex-oauth`를 명시하면 공식 앱 전용 OAuth transport가 실행됩니다. 무조건 거절하는 readiness gate는 없습니다.
 - 로그인 성공은 공개 다중 사용자 호스팅 허가나 무도구 보증이 아닙니다. 로컬 실행 제한은 도구의 영향을 줄일 뿐 zero-tools를 보증하지 않습니다. 실제 로그인/추론 검증과 공개 hosted 이용조건·배포 승인은 별도입니다. OpenAI API 키는 요구하지 않습니다.
 
-## Linux 빠른 설치
+## Linux 원커맨드 설치
+
+검토한 checkout에서 일반 사용자로 **`bash install.sh`**를 실행하세요.
+의존성 점검 → 고정 checkout/venv/Codex 0.162.1 → Discord 토큰 숨김 입력 → 공식 앱 전용
+Codex OAuth 승인 → 테스트 guild + `codex-oauth` 설정 → user service 설치/시작/상태 확인까지
+진행합니다. 실제 브라우저 승인과 Discord 앱/서버 준비는 사람이 수행해야 합니다.
+[한국어 설치 가이드](docs/INSTALL_KO.md)에 정확한 준비 입력, 경로, 재실행/복구/제거 주의사항,
+`--prepare-only`의 NOT READY 경계를 정리했습니다. API 키 대체·sudo·자동 업그레이드는 없습니다.
+
+### 수동 CLI 설치 (기존 운영자용)
 
 권장: 전용 **비-root** 사용자, Python 3.11+, `python3-venv`, 사용자 systemd. Git checkout에서 실행합니다. 시스템 패키지 설치와 계정 생성은 운영자가 별도 처리합니다. 이 프로젝트는 sudo, 방화벽 변경, 자동 서버 배포를 하지 않습니다.
 
@@ -41,7 +50,7 @@ discord-helper codex-login --browser
 - 공식 `@openai/codex` 패키지를 사용자 데이터 디렉터리 아래 npm prefix에 설치합니다. `sudo`/전역 npm 설치는 하지 않습니다. 버전은 검증한 `@openai/codex@0.162.1`로 고정합니다.
 - 공식 `codex -c 'cli_auth_credentials_store="file"' login --device-auth`에 직접 위임합니다. 기기 코드 로그인을 계정/워크스페이스 보안 설정에서 허용해야 할 수 있습니다. 로그인은 운영자의 터미널과 공식 브라우저에서 직접 수행합니다. 코드/비밀번호/OAuth 토큰을 채팅에 보내지 마세요.
 - `CODEX_HOME`은 이 앱 전용 디렉터리이며 API 키 환경 변수는 자식에 전달하지 않습니다. 기존 `~/.codex`/Hermes 인증을 읽거나 복사하지 않습니다. 명시적으로 선택한 `codex-oauth`의 공식 프로세스만 앱 인증을 읽고 갱신합니다.
-- **실행 선택:** `discord-helper run --provider codex-oauth` (`--check`를 추가하면 인증/네트워크 없는 구성 점검). 로그인과 실행에서 동일한 `--data-dir`를 사용하세요. [고정 버전 설치·로그인 준비·실행 제한·실제 probe](docs/CODEX_TRANSPORT.md)를 확인하세요. 로그인이나 서비스 설치만으로 공급자가 활성화되지는 않으며, 기본 systemd 서비스도 비활성 공급자를 유지합니다.
+- **실행 선택:** `discord-helper run --provider codex-oauth` (`--check`를 추가하면 인증/네트워크 없는 구성 점검). 로그인과 실행에서 동일한 `--data-dir`를 사용하세요. [고정 버전 설치·로그인 준비·실행 제한·실제 probe](docs/CODEX_TRANSPORT.md)를 확인하세요. 로그인만으로 공급자가 활성화되지는 않습니다. `runtime.json`이 없는 수동 설치는 비활성 공급자를 유지하지만, 원커맨드 설치는 `codex-oauth`와 테스트 guild를 명시적으로 저장하고 서비스의 `run`이 이를 읽습니다.
 
 ### Discord 토큰 설정 → 시작 → 상태/로그 → 중지
 
@@ -60,7 +69,7 @@ discord-helper stop
 - systemd user manager가 없는 컨테이너/서버/macOS에서는 `discord-helper run`으로 포그라운드 실행하고 Ctrl-C로 종료합니다. 이 모드에서 `start/stop/status/logs`는 사용할 수 없습니다.
 - 단일 데이터 디렉터리에 한 프로세스만 실행하도록 파일 잠금을 사용합니다. 같은 DB를 별도 경로/저수준 API로 공유하는 다중 프로세스 운영은 지원하지 않습니다.
 - 부팅/로그아웃 뒤에도 실행하려면 운영자가 별도로 user service enable 및 사용자 lingering 정책을 결정하세요. 도구는 이를 몰래 활성화하지 않습니다.
-- 테스트 서버만 명령을 등록하려면 `discord-helper run --sync-guild 서버ID`를 사용합니다. 기본 서비스는 가입한 서버에 사용할 전역 명령을 동기화합니다. 이 버전의 systemd unit에는 테스트 서버 옵션이 없습니다.
+- 테스트 서버만 명령을 등록하려면 `discord-helper run --sync-guild 서버ID`를 사용합니다. 원커맨드 설치는 `runtime.json`의 양수 `sync_guild`를 서비스에도 적용합니다. 설정 파일이 없는 기존 수동 CLI의 기본값은 전역 sync이므로 테스트 설치에는 원커맨드 경로를 권장합니다.
 
 ### Discord 앱 권한
 

@@ -119,6 +119,26 @@ def main():
         assert not (paths.config / 'credentials.json').exists()
         assert not (paths.data / 'state.db').exists()
         print('PASS: real user-systemd fixture lifecycle; NOT live bot readiness', flush=True)
+        # Exercise installer orchestration with explicit offline human/network
+        # fixtures, but REAL setup storage, provider discovery, unit and systemctl.
+        from unittest.mock import patch
+        from helperbot import bootstrap, manage
+        native = paths.data/'tools/node_modules/@openai/codex-fixture/vendor/fixture/bin/codex'
+        native.parent.mkdir(parents=True)
+        native.write_text('CI discovery fixture only; never executed')
+        with patch.object(bootstrap, 'ask', return_value='123456789'), patch.object(
+                manage.getpass, 'getpass', return_value='CI-FIXTURE-NOT-A-TOKEN'), patch.object(
+                bootstrap, 'oauth_ready', return_value=True):
+            bootstrap.finish(paths)
+            saved = (paths.config/'credentials.json').read_bytes()
+            settings = (paths.config/'runtime.json').read_bytes()
+            bootstrap.finish(paths)
+            assert (paths.config/'credentials.json').read_bytes() == saved
+            assert (paths.config/'runtime.json').read_bytes() == settings
+        assert manage.runtime_config(paths) == {'provider': 'codex-oauth', 'sync_guild': 123456789}
+        assert (paths.data/'state.db').is_file()
+        command(*cli, 'stop')
+        print('PASS: installer finish/rerun + real systemd; token/OAuth/Discord are OFFLINE FIXTURES, NOT live readiness', flush=True)
     finally:
         original_error = sys.exc_info()[0] is not None
         try:

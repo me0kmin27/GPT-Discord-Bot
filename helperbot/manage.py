@@ -1,4 +1,4 @@
-"""Local operator tooling. Never enables Codex as a public provider."""
+"""Local operator tooling; Codex OAuth requires explicit runtime selection."""
 from dataclasses import dataclass
 from pathlib import Path
 import getpass
@@ -48,7 +48,7 @@ def unit_text(paths):
         sys.executable, '-m', 'helperbot.manage', '--config-dir', paths.config,
         '--data-dir', paths.data, '--unit-dir', paths.units]) + ' run'
     return MARKER + (
-        '[Unit]\nDescription=Opt-in Discord knowledge helper (Codex disabled)\n'
+        '[Unit]\nDescription=Opt-in Discord knowledge helper\n'
         'After=network-online.target\n\n[Service]\nType=simple\n'
         f'ExecStart={command}\n'
         'UMask=0077\nNoNewPrivileges=true\nRestart=on-failure\nRestartSec=10\n'
@@ -134,7 +134,7 @@ def codex_login(paths, *, browser=False, runner=subprocess.run):
                '-c', 'forced_login_method="chatgpt"', 'login']
     if not browser:
         command.append('--device-auth')
-    print('Official Codex login in isolated app home. Public live provider remains DISABLED.')
+    print('Official Codex login in isolated app home. Provider selection is controlled by runtime.json / run --provider.')
     old_mask = os.umask(0o077)
     try:
         return runner(command, env=env, cwd=login_home).returncode
@@ -180,7 +180,7 @@ def setup(paths, token=None):
         raise ManagementError("Invalid token format (content not logged)")
     if not secure_create(target, json.dumps({'DISCORD_BOT_TOKEN': token}) + '\n'):
         raise ManagementError("Credentials appeared concurrently; not overwritten")
-    print("Credentials saved privately. Codex live provider remains disabled.")
+    print("Credentials saved privately; provider selection is unchanged.")
 
 
 def load_token(paths):
@@ -216,8 +216,34 @@ def runtime_lock(paths):
         os.close(fd)
 
 
-def run(paths, *, check=False, sync_guild=None, provider_name='disabled-codex', codex_executable=None):
+def runtime_config(paths):
+    """A private, strictly validated operator selection, not credential discovery."""
+    target = paths.config / 'runtime.json'
+    if any(p.is_symlink() for p in (target, *target.parents)):
+        raise ManagementError('Refusing symlinked runtime configuration')
+    if not target.exists():
+        return {'provider': 'disabled-codex', 'sync_guild': None}
+    try:
+        with target.open() as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise ValueError()
+            config = json.load(stream)
+        if set(config) != {'provider', 'sync_guild'} or config['provider'] not in ('disabled-codex', 'codex-oauth'):
+            raise ValueError()
+        guild = config['sync_guild']
+        if guild is not None and (type(guild) is not int or not 0 < guild < 2**64):
+            raise ValueError()
+        return config
+    except (OSError, ValueError, TypeError):
+        raise ManagementError('Invalid runtime.json: require private provider and positive sync_guild (null means global)') from None
+
+
+def run(paths, *, check=False, sync_guild=None, provider_name=None, codex_executable=None):
     os.umask(0o077)
+    config = runtime_config(paths)
+    provider_name = provider_name if provider_name is not None else config['provider']
+    sync_guild = sync_guild if sync_guild is not None else config['sync_guild']
     try:
         provider = build_provider(provider_name, data=paths.data, executable=codex_executable)
     except ValueError as exc:
@@ -252,7 +278,7 @@ def main(argv=None):
     foreground = subs.add_parser('run')
     foreground.add_argument('--check', action='store_true')
     foreground.add_argument('--sync-guild', type=int)
-    foreground.add_argument('--provider', choices=['disabled-codex', 'codex-oauth'], default='disabled-codex')
+    foreground.add_argument('--provider', choices=['disabled-codex', 'codex-oauth'], default=None)
     foreground.add_argument('--codex-executable', type=Path, help='Absolute pinned official native binary; default app-local install')
     args = parser.parse_args(argv)
     paths = Paths(args.config_dir.absolute(), args.data_dir.absolute(), args.unit_dir.absolute())
@@ -270,7 +296,8 @@ def main(argv=None):
                        provider_name=args.provider, codex_executable=args.codex_executable)
         elif args.command == 'doctor':
             print(f'platform={platform.system()} python={platform.python_version()}')
-            print('provider=disabled-codex (login does NOT enable public inference)')
+            config = runtime_config(paths)
+            print(f'provider={config["provider"]} sync_guild={config["sync_guild"]}')
             print(f'credentials_present={(paths.config / "credentials.json").is_file()}')
             print(f'systemctl_available={bool(shutil.which("systemctl"))}')
             print(f'codex_available={bool(shutil.which("codex")) or (paths.data / "tools/node_modules/.bin/codex").is_file()}')
