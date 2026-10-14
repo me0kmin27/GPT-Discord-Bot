@@ -49,7 +49,7 @@ def test_management_explicit_provider_is_wired(tmp_path, monkeypatch):
     assert isinstance(selected[0], CodexOAuthProvider)
 
 
-@pytest.mark.parametrize('scenario', ['success', 'config_warning'])
+@pytest.mark.parametrize('scenario', ['success', 'config_warning', 'turn_config_warning'])
 async def test_fresh_ephemeral_oauth_exchange_with_fixture_only(tmp_path, monkeypatch, scenario):
     from helperbot import codex_transport as transport
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',
@@ -91,7 +91,7 @@ async def test_official_remote_disabled_notification(tmp_path):
 @pytest.mark.parametrize('scenario', ['tool_item', 'unknown_item', 'turn_approval',
     'wrong_thread', 'wrong_turn', 'bad_citation', 'bool_citation', 'invalid_output',
     'extra_output_field', 'excessive_output', 'stream_mismatch', 'no_final', 'failed_turn',
-    'signed_out', 'api_key', 'turn_config_warning', 'unsafe_config'])
+    'signed_out', 'api_key', 'unsafe_config'])
 async def test_stream_contract_fail_closed(tmp_path, monkeypatch, scenario):
     from helperbot import codex_transport as transport
     monkeypatch.setattr(transport.CodexOAuthProvider, '_command',

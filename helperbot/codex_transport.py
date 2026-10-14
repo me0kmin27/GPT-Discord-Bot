@@ -207,7 +207,7 @@ class StdioClient:
         self.wire_bytes = 0
         self.event_count = 0
         self.configuration_warning = False
-        self.inference_started = False
+
 
     async def __aenter__(self):
         self.deadline = asyncio.get_running_loop().time() + self.timeout
@@ -323,10 +323,8 @@ class StdioClient:
                 raise ProviderUnavailable('Codex server request rejected')
             if message['method'] == 'configWarning':
                 self.configuration_warning = True
-                if self.inference_started:
-                    raise ProviderUnavailable('Codex configuration warning prevents inference')
-                # Startup notices are not necessarily invalid configuration.
-                # Validate resolved controls before account/thread, without logs.
+                # Notices are not evidence of invalid configuration, regardless
+                # of arrival time. Resolved controls/thread policy are validated.
                 return {'method': 'configWarning', 'params': {}}
             if message['method'] == 'remoteControl/status/changed':
                 if message.get('params', {}).get('status') != 'disabled':
@@ -340,8 +338,6 @@ class StdioClient:
         return message
 
     async def rpc(self, method, params):
-        if method not in ('initialize', 'account/read', 'config/read'):
-            self.inference_started = True
         self.sequence += 1
         await self.send({'id': self.sequence, 'method': method, 'params': params})
         while True:

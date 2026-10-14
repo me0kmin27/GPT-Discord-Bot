@@ -91,7 +91,8 @@ were checked against the **rust-v0.162.1** source and the actual native binary.
   supported execution controls. Reject injected MCP/hooks/model-provider/config
   overrides; reject application `config.toml`. Startup warning text is discarded:
   a warning alone is not an inference ban. Actual invalid settings fail validation.
-  Configuration changes/warnings during inference still abort that turn.
+  Delayed notices also do not constitute an artificial gate; protocol errors,
+  mismatched effective controls, tool items and server requests still abort.
 - Check returned thread sandbox, approval policy, reviewer, cwd, model provider,
   ephemeral flag and absence of a session path before sending user data.
 - Reject symlinked runtime/auth paths and non-private/non-owner auth files without
