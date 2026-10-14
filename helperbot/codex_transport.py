@@ -322,6 +322,16 @@ class StdioClient:
                 await self.send({'id': message['id'], 'error': {
                     'code': -32601, 'message': 'Client requests are not supported'}})
                 raise ProviderUnavailable('Codex server request rejected')
+            if message['method'] == 'warning':
+                # Pinned v0.162.1 WarningNotification: advisory text, optional
+                # nullable thread target. Never retain/log the warning body.
+                params = message['params']
+                thread_id = params.get('threadId')
+                if (not isinstance(params.get('message'), str)
+                        or (thread_id is not None and not isinstance(thread_id, str))):
+                    raise ProviderUnavailable('Codex malformed notification or request')
+                return {'method': 'warning', 'params':
+                        {'threadId': thread_id} if thread_id is not None else {}}
             if message['method'] == 'configWarning':
                 self.configuration_warning = True
                 # Notices are not evidence of invalid configuration, regardless

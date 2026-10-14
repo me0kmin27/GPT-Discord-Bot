@@ -119,6 +119,8 @@ for line in sys.stdin:
         assert params['outputSchema']['additionalProperties'] is False
         assert params['sandboxPolicy'] == {'type': 'readOnly', 'networkAccess': False}
         assert params['approvalPolicy'] == 'never'
+        if SCENARIO == 'rpc_warning':
+            send({'method': 'warning', 'params': {'message': 'synthetic-sensitive', 'threadId': None}})
         send({'id': message['id'], 'result': {'turn': {'id': 'fixture-turn',
               'status': 'inProgress', 'items': []}}})
         text = json.dumps({'text': 'fixture answer, NOT live AI',
@@ -144,6 +146,8 @@ for line in sys.stdin:
         if SCENARIO in ('tool_item', 'unknown_item'):
             send({'method': 'item/started', 'params': dict(scope, item={
                   'id': 'tool', 'type': 'commandExecution' if SCENARIO == 'tool_item' else 'newDangerousTool'})})
+        if SCENARIO == 'turn_warning':
+            send({'method': 'warning', 'params': {'message': 'synthetic-sensitive', 'threadId': 'fixture-thread'}})
         if SCENARIO == 'turn_config_warning':
             send({'method': 'configWarning', 'params': {'summary': 'synthetic-sensitive'}})
         if SCENARIO == 'turn_approval':
