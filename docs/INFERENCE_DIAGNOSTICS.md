@@ -80,3 +80,10 @@ and negative results, secret-bearing exceptions/stdout/stderr/logging, RPC numer
 code retention, fixed service categories, argument errors, missing installation,
 empty-evidence citations, and unchanged 20-second deadline wiring. Existing
 transport tests separately exercise actual subprocess timeout and cleanup.
+
+Full combined local suite: **435 passed, 1 skipped** (macOS/Python 3.9).
+A real standalone credential-free run against an archived `f1c0957` installation
+and the pinned official native binary returned exit 1, stage `account`, category
+`login_required`, answer_success false, answer_length 0, duration_ms 374, with
+empty stderr and no auth file created. This verifies the backward-compatible
+operator probe, not successful inference. No existing auth was accessed.
