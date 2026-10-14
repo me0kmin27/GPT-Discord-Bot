@@ -14,6 +14,9 @@ for line in sys.stdin:
     message = json.loads(line)
     method = message.get('method')
     if method == 'initialize':
+        if SCENARIO == 'output_flood':
+            sys.stdout.write('x' * 2000000)
+            sys.stdout.flush()
         if SCENARIO == 'hang':
             import time
             time.sleep(60)
@@ -45,6 +48,13 @@ for line in sys.stdin:
         if SCENARIO == 'unknown_notification':
             send({'method': 'future/tool/started', 'params': {}})
             continue
+        if SCENARIO == 'early_tool':
+            send({'method': 'item/started', 'params': {'threadId': 'fixture-thread',
+                  'turnId': 'fixture-turn', 'item': {'type': 'webSearch', 'id': 'tool'}}})
+        if SCENARIO == 'invalid_method':
+            send({'method': ['invalid'], 'params': {}})
+        if SCENARIO == 'invalid_remote_params':
+            send({'method': 'remoteControl/status/changed', 'params': []})
         if SCENARIO in ('remote_disabled', 'remote_connected'):
             send({'method': 'remoteControl/status/changed', 'params': {
                   'status': 'disabled' if SCENARIO == 'remote_disabled' else 'connected',
@@ -58,6 +68,10 @@ for line in sys.stdin:
         pass
     elif method == 'account/read':
         assert message['params'] == {'refreshToken': False}
+        if SCENARIO in ('signed_out', 'api_key'):
+            send({'id': message['id'], 'result': {'account': None if SCENARIO == 'signed_out' else {'type': 'apiKey'},
+                  'requiresOpenaiAuth': True}})
+            continue
         send({'id': message['id'], 'result': {'account': {'type': 'chatgpt',
               'email': 'synthetic@example.invalid', 'planType': 'plus'},
               'requiresOpenaiAuth': True}})
@@ -84,7 +98,8 @@ for line in sys.stdin:
         assert params['outputSchema']['additionalProperties'] is False
         send({'id': message['id'], 'result': {'turn': {'id': 'fixture-turn',
               'status': 'inProgress', 'items': []}}})
-        text = json.dumps({'text': 'fixture answer, NOT live AI', 'case_ids': [7]})
+        text = json.dumps({'text': 'fixture answer, NOT live AI',
+                           'case_ids': [data['evidence'][0]['id']] if data['evidence'] else []})
         if SCENARIO == 'bad_citation':
             text = json.dumps({'text': 'fixture', 'case_ids': [999]})
         if SCENARIO == 'bool_citation':
