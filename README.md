@@ -109,6 +109,7 @@ discord-helper stop
 ## 개발·검증
 
 ```bash
+mkdir -p .runtime
 .venv/bin/python -m pytest -q --basetemp=.runtime/pytest
 .venv/bin/python -m compileall -q helperbot
 discord-helper --config-dir "$PWD/.runtime/check/config" --data-dir "$PWD/.runtime/check/data" run --check

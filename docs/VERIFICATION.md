@@ -9,6 +9,8 @@
 - `discord-helper doctor`: disabled-codex, credentials_present=False 확인.
 - `discord-helper ... run --check`: `Offline check OK: 6 commands; provider=disabled-codex; no network/login` 확인.
 
+초기 Ubuntu CI는 Git 제외 디렉터리 `.runtime`의 부모가 없는 상태에서 pytest `--basetemp`를 지정하여 실패했습니다. 로컬에서도 동일 오류를 재현했고 CI/문서에 `mkdir -p .runtime` 선행 단계를 추가했습니다. 최종 CI 성공은 최종 head에서 다시 확인해야 합니다.
+
 ## 테스트 경계
 
 - SQLite는 실제 임시 파일로 테스트합니다. 서버/채널/사용자/스레드 격리, 후보→확정, 권한 거절, 문맥 상한/초기화, 개인정보/메시지/채널/서버 삭제, 삭제 중 지연 응답 무효화를 검증합니다.
