@@ -95,10 +95,10 @@ class HelperClient(discord.Client):
             await self.tree.sync()
 
 
-def create_client(store, *, sync_guild=None):
+def create_client(store, *, sync_guild=None, provider=None):
     admission = Admission(Limits.from_env())
     client = HelperClient(store, sync_guild)
-    service = Service(store, DisabledCodex())
+    service = Service(store, DisabledCodex() if provider is None else provider)
 
     @client.tree.command(name="channel", description="관리자: 현재 채널 명시적 참여/삭제 설정")
     @app_commands.guild_only()

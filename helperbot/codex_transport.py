@@ -1,12 +1,13 @@
-"""Official Codex app-server stdio transport, NOT an enabled hosted provider.
+"""Explicitly selected local official Codex OAuth transport.
 
-No tokens/endpoints are implemented here: official CLI owns OAuth. The security
-readiness gate is intentionally unconditional, not a configuration switch.
+Restrictions mitigate execution effects; they do not prove a zero-tool registry.
+The official CLI owns application-isolated OAuth; no credential copying.
 """
 import asyncio
 import json
 import os
 import signal
+import platform
 from collections import deque
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,10 +27,62 @@ NOTIFICATIONS = frozenset({
     'account/updated', 'account/rateLimits/updated', 'error'})
 
 
-def require_supported_transport():
-    raise ProviderUnavailable(
-        'Codex zero-tools control is not verified for pinned app-server; '
-        'transport implemented, activation blocked (hosted permission is a separate gate)')
+def execution_config():
+    """Controls verified against rust-v0.162.1 config schema and tool registry.
+
+    Do not use removed js_repl/apply_patch flags as imaginary security controls.
+    Read-only sandbox blocks writes/network, not all host reads or built-in tools.
+    """
+    config = {
+        'cli_auth_credentials_store': 'file', 'forced_login_method': 'chatgpt',
+        'sandbox_mode': 'read-only', 'approval_policy': 'never',
+        'approvals_reviewer': 'user', 'web_search': 'disabled',
+        'allow_login_shell': False, 'shell_environment_policy.inherit': 'none',
+        'shell_environment_policy.set': {}, 'mcp_servers': {},
+        'project_doc_max_bytes': 0, 'history.persistence': 'none',
+        'tools.update_plan.enabled': False,
+        'tools.experimental_request_user_input.enabled': False,
+        'model_provider': 'openai',
+    }
+    for feature in ('shell_tool', 'view_image', 'code_mode', 'code_mode_only',
+                    'apps', 'plugins', 'multi_agent', 'multi_agent_v2',
+                    'browser_use', 'computer_use', 'image_generation',
+                    'shell_snapshot', 'hooks', 'memories', 'request_permissions_tool'):
+        config['features.' + feature] = False
+    config['features.skip_host_skill_discovery'] = True
+    return config
+
+
+def validate_config(config):
+    """Verify resolved controls, not whether an arbitrary warning was emitted."""
+    try:
+        for key, expected in execution_config().items():
+            if key.startswith('tools.'):
+                continue  # Public config/read omits these utility switches.
+            actual = config
+            for part in key.split('.'):
+                actual = actual[part]
+            if actual != expected or type(actual) is not type(expected):
+                raise ValueError()
+        for key in ('notify', 'hooks', 'model_providers', 'plugins', 'skills',
+                    'model_instructions_file', 'model_catalog_json', 'instructions',
+                    'developer_instructions', 'default_permissions', 'permissions',
+                    'experimental_thread_store', 'openai_base_url'):
+            if config.get(key):
+                raise ValueError()
+        if config.get('chatgpt_base_url', 'https://chatgpt.com/backend-api/') != 'https://chatgpt.com/backend-api/':
+            raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        raise ProviderUnavailable('Codex effective configuration restrictions rejected') from None
+
+
+def command_for(executable):
+    args = [str(executable)]
+    for key, value in execution_config().items():
+        # TOML scalar values; empty inline table differs from JSON object syntax.
+        encoded = '{}' if value == {} else json.dumps(value)
+        args.extend(('-c', key + '=' + encoded))
+    return tuple(args + ['app-server'])
 
 
 def prepare_request(request):
@@ -62,19 +115,23 @@ def prepare_request(request):
 
 
 class CodexOAuthProvider:
-    """Implemented managed-OAuth path, hard-gated before filesystem/process access."""
+    """Local managed OAuth with bounded, isolated request processes."""
     def __init__(self, executable, data, *, timeout=20):
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:
+            raise ValueError('Invalid Codex timeout')
         self.executable = Path(executable)
         self.data = Path(data)
+        if not self.executable.is_absolute() or not self.data.is_absolute():
+            raise ValueError('Codex executable and data paths must be absolute')
         self.timeout = timeout
 
     def _command(self):
-        return (str(self.executable), '-c', 'cli_auth_credentials_store="file"',
-                '-c', 'forced_login_method="chatgpt"', 'app-server')
+        return command_for(self.executable)
 
     async def answer(self, request):
-        require_supported_transport()
         payload = prepare_request(request)
+        if platform.system() not in ('Darwin', 'Linux'):
+            raise ProviderUnavailable('Codex requires a supported POSIX sandbox platform')
         try:
             return await asyncio.wait_for(self._answer(request, payload), self.timeout)
         except asyncio.TimeoutError:
@@ -87,30 +144,42 @@ class CodexOAuthProvider:
         from .manage import private_dir
         data = private_dir(self.data)
         codex_home = private_dir(data / 'codex')  # Same home as official codex-login.
+        if (codex_home / 'config.toml').exists() or (codex_home / 'config.toml').is_symlink():
+            raise ProviderUnavailable('Codex application home must not contain operator configuration')
         with TemporaryDirectory(prefix='request-', dir=data) as directory:
             root = Path(directory)
             home = private_dir(root / 'home')
             cwd = private_dir(root / 'work')
             env = {'HOME': str(home), 'CODEX_HOME': str(codex_home),
                    'PATH': os.defpath, 'LANG': 'C.UTF-8', 'TMPDIR': str(root)}
-            async with StdioClient(self._command(), cwd=cwd, env=env) as client:
+            async with StdioClient(self._command(), cwd=cwd, env=env, timeout=self.timeout) as client:
                 await client.initialize()
+                resolved = await client.rpc('config/read', {'includeLayers': False})
+                validate_config(resolved['config'])
                 account = await client.rpc('account/read', {'refreshToken': False})
                 if (account.get('account') or {}).get('type') != 'chatgpt':
                     raise ProviderUnavailable('Codex managed ChatGPT login required')
                 thread = await client.rpc('thread/start', {
                     'ephemeral': True, 'cwd': str(cwd), 'sandbox': 'read-only',
-                    'approvalPolicy': 'untrusted', 'approvalsReviewer': 'user',
+                    'approvalPolicy': 'never', 'approvalsReviewer': 'user',
                     'developerInstructions': request.instruction})
                 thread_id = thread['thread']['id']
                 if thread['thread'].get('ephemeral') is not True or thread['thread'].get('path') is not None:
                     raise ProviderUnavailable('Codex ephemeral thread required')
+                if (thread.get('sandbox') != {'type': 'readOnly', 'networkAccess': False}
+                        or thread.get('approvalPolicy') != 'never'
+                        or thread.get('approvalsReviewer') != 'user'
+                        or thread.get('cwd') != str(cwd)
+                        or thread.get('modelProvider') != 'openai'):
+                    raise ProviderUnavailable('Codex effective thread restrictions rejected')
                 schema = {'type': 'object', 'additionalProperties': False,
                           'required': ['text', 'case_ids'], 'properties': {
                               'text': {'type': 'string'},
                               'case_ids': {'type': 'array', 'items': {'type': 'integer'}}}}
                 turn = await client.rpc('turn/start', {
                     'threadId': thread_id, 'input': [{'type': 'text', 'text': payload}],
+                    'sandboxPolicy': {'type': 'readOnly', 'networkAccess': False},
+                    'approvalPolicy': 'never',
                     'outputSchema': schema})
                 return await client.completion(thread_id, turn['turn']['id'], request.evidence)
 
@@ -247,8 +316,8 @@ class StdioClient:
                 self.configuration_warning = True
                 if self.inference_started:
                     raise ProviderUnavailable('Codex configuration warning prevents inference')
-                # Signed-out diagnostics can complete; warning contents are not
-                # retained and the next non-diagnostic RPC is forbidden.
+                # Startup notices are not necessarily invalid configuration.
+                # Validate resolved controls before account/thread, without logs.
                 return {'method': 'configWarning', 'params': {}}
             if message['method'] == 'remoteControl/status/changed':
                 if message.get('params', {}).get('status') != 'disabled':
@@ -262,9 +331,7 @@ class StdioClient:
         return message
 
     async def rpc(self, method, params):
-        if method not in ('initialize', 'account/read'):
-            if self.configuration_warning:
-                raise ProviderUnavailable('Codex configuration warning prevents inference')
+        if method not in ('initialize', 'account/read', 'config/read'):
             self.inference_started = True
         self.sequence += 1
         await self.send({'id': self.sequence, 'method': method, 'params': params})

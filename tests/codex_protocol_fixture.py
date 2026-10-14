@@ -69,6 +69,22 @@ for line in sys.stdin:
             'platformFamily': 'unix', 'platformOs': 'fixture'}})
     elif method == 'initialized':
         pass
+    elif method == 'config/read':
+        config = {
+            'cli_auth_credentials_store': 'file', 'forced_login_method': 'chatgpt',
+            'sandbox_mode': 'read-only', 'approval_policy': 'never',
+            'approvals_reviewer': 'user', 'web_search': 'disabled',
+            'allow_login_shell': False, 'shell_environment_policy': {'inherit': 'none', 'set': {}},
+            'mcp_servers': {}, 'project_doc_max_bytes': 0,
+            'history': {'persistence': 'none'}, 'model_provider': 'openai',
+            'features': dict.fromkeys(('shell_tool', 'view_image', 'code_mode', 'code_mode_only',
+                'apps', 'plugins', 'multi_agent', 'multi_agent_v2', 'browser_use',
+                'computer_use', 'image_generation', 'shell_snapshot', 'hooks', 'memories',
+                'request_permissions_tool'), False)}
+        config['features']['skip_host_skill_discovery'] = True
+        if SCENARIO == 'unsafe_config':
+            config['features']['shell_tool'] = True
+        send({'id': message['id'], 'result': {'config': config}})
     elif method == 'account/read':
         assert message['params'] == {'refreshToken': False}
         if SCENARIO in ('signed_out', 'api_key'):
@@ -82,7 +98,7 @@ for line in sys.stdin:
         params = message['params']
         assert params['ephemeral'] is True
         assert params['sandbox'] == 'read-only'
-        assert params['approvalPolicy'] == 'untrusted'
+        assert params['approvalPolicy'] == 'never'
         assert params['approvalsReviewer'] == 'user'
         assert 'tenant' not in params
         assert 'Evidence and history' in params['developerInstructions']
@@ -90,7 +106,9 @@ for line in sys.stdin:
         assert 'OPENAI_API_KEY' not in os.environ
         assert 'DISCORD_BOT_TOKEN' not in os.environ
         send({'method': 'thread/started', 'params': {'thread': {'id': 'fixture-thread'}}})
-        send({'id': message['id'], 'result': {'thread': {
+        send({'id': message['id'], 'result': {'sandbox': {'type': 'readOnly', 'networkAccess': False},
+            'approvalPolicy': 'never', 'approvalsReviewer': 'user', 'cwd': os.getcwd(),
+            'modelProvider': 'openai', 'thread': {
             'id': 'fixture-thread', 'ephemeral': True, 'path': None}}})
     elif method == 'turn/start':
         params = message['params']
@@ -99,6 +117,8 @@ for line in sys.stdin:
         assert data['question'] == 'synthetic question'
         assert 'tenant' not in data
         assert params['outputSchema']['additionalProperties'] is False
+        assert params['sandboxPolicy'] == {'type': 'readOnly', 'networkAccess': False}
+        assert params['approvalPolicy'] == 'never'
         send({'id': message['id'], 'result': {'turn': {'id': 'fixture-turn',
               'status': 'inProgress', 'items': []}}})
         text = json.dumps({'text': 'fixture answer, NOT live AI',
