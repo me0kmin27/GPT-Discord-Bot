@@ -45,8 +45,7 @@ def main():
             return subprocess.run(cli+args, cwd=root, check=True, text=True, capture_output=True).stdout
         shown = json.loads(command(['settings', 'show']))
         saved = json.loads(command(['settings', 'set', '--revision', shown['revision'],
-                                    '--model', 'synthetic-cli-model', '--setup-timeout-seconds', '3',
-                                    '--generation-timeout-seconds', '20']))
+                                    '--model', 'synthetic-cli-model']))
         assert saved['values']['model'] == 'synthetic-cli-model'
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
@@ -91,6 +90,35 @@ def main():
                 assert page.locator('#model').input_value() == 'synthetic-cli-model'
                 assert page.locator('strong').inner_text() == '확인되지 않음'
                 assert page.locator('.card').first.evaluate('(e) => getComputedStyle(e).borderRadius') == '8px'
+                # Submit the actual rendered form changing only model. Compare every
+                # raw key, not resolved values (which conceal omission regressions).
+                before = json.loads(runtime.read_text())
+                page.locator('#model').fill('synthetic-omitted-model')
+                page.get_by_role('button', name='설정 저장', exact=True).click()
+                page.wait_for_url(base+'/')
+                before['codex']['model'] = 'synthetic-omitted-model'
+                assert json.loads(runtime.read_text()) == before
+                omitted_readback = json.loads(command(['settings', 'show']))
+                assert omitted_readback['values']['setup_timeout_seconds'] == 3
+                assert omitted_readback['values']['generation_timeout_seconds'] == 20
+                # Explicit defaults must remain pinned on unrelated edits.
+                command(['settings', 'set', '--revision', omitted_readback['revision'],
+                         '--setup-timeout-seconds', '3', '--generation-timeout-seconds', '20'])
+                page.reload()
+                before = json.loads(runtime.read_text())
+                page.locator('#model').fill('synthetic-pinned-model')
+                page.get_by_role('button', name='설정 저장', exact=True).click()
+                page.wait_for_url(base+'/')
+                before['codex']['model'] = 'synthetic-pinned-model'
+                assert json.loads(runtime.read_text()) == before
+                assert page.locator('#setup_timeout_seconds_mode').input_value() == 'override'
+                # Deliberate reset removes only the chosen key.
+                page.locator('#generation_timeout_seconds_mode').select_option('default')
+                page.get_by_role('button', name='설정 저장', exact=True).click()
+                page.wait_for_url(base+'/')
+                del before['codex']['generation_timeout_seconds']
+                assert json.loads(runtime.read_text()) == before
+                assert page.locator('#generation_timeout_seconds_mode').input_value() == 'default'
                 shot('02-settings-desktop')
                 page.locator('#model').fill('synthetic-web-model')
                 page.locator('#setup_timeout_seconds').fill('2.5')
@@ -101,6 +129,11 @@ def main():
                 assert readback['values']['model'] == 'synthetic-web-model'
                 assert readback['values']['setup_timeout_seconds'] == 2.5
                 assert readback['applied'] is None
+                before['codex'].update(model='synthetic-web-model', setup_timeout_seconds=2.5)
+                assert json.loads(runtime.read_text()) == before
+                (evidence/'config-readback.json').write_text(json.dumps({
+                    'omitted_defaults': omitted_readback, 'final_raw': before,
+                    'final_cli': readback, 'all_unedited_keys_preserved': True}, indent=2)+'\n')
                 shot('03-saved-readback')
                 page.locator('#model').fill('invalid model with spaces')
                 page.get_by_role('button', name='설정 저장', exact=True).click()
@@ -130,7 +163,9 @@ def main():
             assert sorted(p.name for p in paths.data.iterdir()) == ['codex', 'state.db']
             manifest = {'synthetic_only': True, 'screenshots': shots, 'count': len(shots),
                         'verified': ['packaged_waitress', 'cli_show_set_readback', 'browser_login_logout',
-                                     'gui_save_cli_readback', 'validation_no_write', 'csrf_rejection',
+                                     'gui_save_cli_readback', 'omitted_defaults_preserved',
+                                     'explicit_defaults_preserved', 'deliberate_default_reset',
+                                     'all_unedited_config_keys_preserved', 'validation_no_write', 'csrf_rejection',
                                      'restart_confirmation_cancel', 'responsive_390px', 'local_assets_only', 'synthetic_credentials_auth_db_preserved'],
                         'not_verified': ['live_systemd_restart', 'bot_applied_settings', 'Discord', 'OAuth_inference']}
             (evidence/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')

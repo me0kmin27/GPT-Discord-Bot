@@ -160,7 +160,13 @@ def create_app(paths, *, port=8765):
         changes['sync_guild'] = guild
         try:
             for key in ('setup_timeout_seconds', 'generation_timeout_seconds'):
-                changes[key] = float(request.form.get(key, ''))
+                mode = request.form.get(key + '_mode')
+                if mode == 'default':
+                    changes[key] = ''
+                elif mode == 'override':
+                    changes[key] = float(request.form.get(key, ''))
+                else:
+                    raise ManagementError('제한 시간 기본값 또는 직접 지정을 선택하세요.')
         except ValueError:
             raise ManagementError('제한 시간은 숫자로 입력하세요.') from None
         save_settings(paths, changes, request.form.get('revision'))

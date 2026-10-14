@@ -67,7 +67,8 @@ def read_settings(paths):
     values.update({key: options.get(key, default) for key, default in TIMEOUT_DEFAULTS.items()})
     values['sync_guild'] = config['sync_guild']
     return {'revision': revision(config), 'values': values,
-            'provider': config['provider'], 'applied': None}
+            'provider': config['provider'], 'applied': None,
+            'configured': list(options)}
 
 
 @contextmanager
@@ -102,6 +103,11 @@ def atomic_json(target, value):
 
 
 def save_settings(paths, changes, expected_revision):
+    """Partial update; an empty optional value explicitly removes its override.
+
+    Clear commands are not persisted as empty strings. The resulting runtime
+    config still passes the shared provider validator under the revision lock.
+    """
     with settings_lock(paths):
         current = runtime_config(paths)
         if revision(current) != expected_revision:
@@ -113,7 +119,8 @@ def save_settings(paths, changes, expected_revision):
         for key, value in changes.items():
             if key == 'sync_guild':
                 updated[key] = value
-            elif value == '' and key in ('model', 'model_reasoning_effort'):
+            elif value == '' and key in ('model', 'model_reasoning_effort', 'web_search',
+                                         *TIMEOUT_DEFAULTS):
                 options.pop(key, None)
             else:
                 options[key] = value
