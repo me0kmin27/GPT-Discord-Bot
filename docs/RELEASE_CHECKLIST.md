@@ -12,7 +12,7 @@
 - **구현·오프라인 검증됨:** 빈 지식 → 명시적 질문 후보 → 사용자 확정 → 관련 사례/출처 조회 → 로컬 개인정보 삭제.
 - **CI fixture 검증됨:** Linux user-systemd 수명주기·실패 복구. 실제 봇 실행/Discord 연결은 아니다.
 - **live 미검증:** Discord 로그인·초대·명령 동기화·실권한·삭제 이벤트·출처 링크 접근, 대상 서버 배포·비밀 복구.
-- **차단:** Codex 생성 transport는 없다. 운영자 구독 하나를 app-server 인증으로 공개 호스팅 relay하는 경로는 진행하지 않는다. 승인된 대안 결정 없이 API 키/유료 공급자로 바꾸지 않는다.
+- **transport 구현 / 활성화 차단:** 공식 Codex login OAuth stdio client와 bounded provider 경로를 구현하고 credential-free binary handshake 및 subprocess fixture로 검증한다. [구현 증거](CODEX_TRANSPORT.md)를 기준으로 확인한다. 무도구 강제 미검증으로 기본 DisabledCodex/고정 readiness gate를 유지한다. 실제 인증·추론·공개 hosted 허가·배포는 별도 gate이며 API 키/다른 인증으로 전환하지 않는다.
 
 `구현됨`은 소스 존재, `오프라인 검증됨`은 실제 실행한 로컬 경계,
 `CI fixture 검증됨`은 아래 지정 환경만, `live 미검증`은 실제 운영 증거 없음,
@@ -28,7 +28,7 @@
 | 삭제 후 재노출 방지 | `Store.delete_user/delete_sources`, `operation`; `test_receipt_races.py`, `test_release_acceptance.py` | 로컬 DB 및 아직 제출하지 않은 응답 검증. 오프라인 이벤트 누락·이미 전송된 게시물·백업은 별도 |
 | 요청/저장 상한 | `admission.py`, `Store.check_capacity/candidate`; `test_admission*.py`, `test_capacity*.py` | 단일 프로세스 구현·오프라인 검증됨. 전체 디스크/tenant 수/history 키 수 상한은 아님 |
 | Linux 운영 CLI | `manage.py`; `test_manage*.py`, `test_systemd.py`, `systemd_lifecycle.py` | 오프라인 및 실제 CI fixture 검증됨. 실제 봇 ExecStart/토큰/재부팅·linger/복구는 미검증 |
-| API 키 없는 Codex 생성 | `DisabledCodex.answer`, `create_client` | **미구현·차단**. 로그인 위임 도구는 transport/호스팅 허가가 아님 |
+| API 키 없는 Codex 생성 | `codex_transport.py`, `DisabledCodex.answer`, `create_client`; `test_codex_*.py`, `probe_codex.py` | **transport 구현, live 활성화 차단**. 실제 signed-out handshake와 fixture 생성 경로 검증; 무도구·인증/실추론·호스팅 허가는 미충족 |
 
 ## 오래된 마일스톤 기록의 정정
 

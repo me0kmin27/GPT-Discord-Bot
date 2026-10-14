@@ -1,0 +1,9 @@
+{
+  "name": "discord-helper-codex-protocol-probe",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pinned public official binary for credential-free protocol verification only",
+  "dependencies": {
+    "@openai/codex": "0.162.1"
+  }
+}

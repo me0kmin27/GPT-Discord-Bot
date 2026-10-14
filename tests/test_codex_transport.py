@@ -47,7 +47,7 @@ async def test_fresh_ephemeral_oauth_exchange_with_fixture_only(tmp_path, monkey
 
 @pytest.mark.parametrize('scenario', ['server_request', 'rpc_error', 'wrong_id',
     'malformed', 'eof', 'oversized', 'notification_flood', 'unknown_notification',
-    'wrong_version', 'remote_connected'])
+    'wrong_version', 'remote_connected', 'early_tool', 'invalid_method', 'invalid_remote_params'])
 async def test_protocol_failure_is_closed_sanitized_and_reaped(tmp_path, scenario, capsys):
     from helperbot.codex_transport import StdioClient
     async with StdioClient((sys.executable, str(FIXTURE), scenario), cwd=tmp_path,
@@ -70,7 +70,8 @@ async def test_official_remote_disabled_notification(tmp_path):
 
 @pytest.mark.parametrize('scenario', ['tool_item', 'unknown_item', 'turn_approval',
     'wrong_thread', 'wrong_turn', 'bad_citation', 'bool_citation', 'invalid_output',
-    'extra_output_field', 'excessive_output', 'stream_mismatch', 'no_final', 'failed_turn'])
+    'extra_output_field', 'excessive_output', 'stream_mismatch', 'no_final', 'failed_turn',
+    'signed_out', 'api_key', 'turn_config_warning'])
 async def test_stream_contract_fail_closed(tmp_path, monkeypatch, scenario):
     from helperbot import codex_transport as transport
     monkeypatch.setattr(transport, 'require_supported_transport', lambda: None)
@@ -155,3 +156,61 @@ async def test_client_deadline_is_not_unbounded(tmp_path):
             await client.initialize()
         process = client.process
     assert process.returncode is not None
+
+
+async def test_cancel_during_success_cleanup_not_swallowed(tmp_path, monkeypatch):
+    from helperbot.codex_transport import StdioClient
+    cleanup_started, release = asyncio.Event(), asyncio.Event()
+    client = StdioClient((sys.executable, str(FIXTURE)), cwd=tmp_path,
+                         env={'CODEX_HOME': str(tmp_path)})
+    async def run():
+        async with client:
+            await client.initialize()
+            original = client.process.wait
+            async def slow_wait():
+                cleanup_started.set()
+                await release.wait()
+                return await original()
+            monkeypatch.setattr(client.process, 'wait', slow_wait)
+    task = asyncio.create_task(run())
+    await asyncio.wait_for(cleanup_started.wait(), 2)
+    task.cancel()
+    await asyncio.sleep(0)
+    task.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert client.process.returncode is not None
+
+
+async def test_cleanup_drains_saturated_stdout_after_kill(tmp_path):
+    from helperbot.codex_transport import StdioClient
+    client = StdioClient((sys.executable, str(FIXTURE), 'output_flood'),
+                         cwd=tmp_path, env={'CODEX_HOME': str(tmp_path)})
+    await client.__aenter__()
+    with pytest.raises(provider.ProviderUnavailable):
+        await client.initialize()
+    # Deliberately let the pipe saturate before teardown; not a timing assumption
+    # about inference. RED rescue drain ensures even a broken cleanup leaves no child.
+    await asyncio.sleep(0.1)
+    closing = asyncio.create_task(client.__aexit__())
+    done, _ = await asyncio.wait((closing,), timeout=0.5)
+    if not done:
+        await client.process.stdout.read()
+    await closing
+    eof = client.process.stdout.at_eof()
+    if not eof:
+        await client.process.stdout.read()
+    assert done and eof, 'cleanup left a paused stdout pipe open'
+
+
+async def test_config_warning_allows_diagnostics_but_blocks_thread(tmp_path, capsys):
+    from helperbot.codex_transport import StdioClient
+    async with StdioClient((sys.executable, str(FIXTURE), 'config_warning'),
+                           cwd=tmp_path, env={'CODEX_HOME': str(tmp_path)}) as client:
+        await client.initialize()
+        await client.rpc('account/read', {'refreshToken': False})
+        assert client.configuration_warning is True
+        with pytest.raises(provider.ProviderUnavailable, match='configuration warning'):
+            await client.rpc('thread/start', {})
+    assert not capsys.readouterr().out
