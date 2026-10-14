@@ -2,6 +2,7 @@
 import asyncio
 from dataclasses import dataclass
 from .provider import Request, ProviderUnavailable, DisabledCodex
+from .async_utils import wait_owned
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class Service:
         evidence = tuple(self.store.search_knowledge(s, question))
         generated = None
         try:
-            reply = await asyncio.wait_for(
+            reply = await wait_owned(
                 self.provider.answer(Request(s.tenant, question, history, evidence)), self.timeout)
             allowed = {item['id'] for item in evidence}
             if (not isinstance(reply.text, str) or not reply.text.strip()
