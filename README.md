@@ -10,9 +10,9 @@
 `overview --json`은 원시 로그 없이 상태를 제공합니다. 저장과 실제 적용은 별개입니다.
 [운영 상태·시작 오류 해결 및 개선 검증 범위](docs/OPERATOR_USABILITY.md)를 참고하세요.
 
-**PR #2–#7의 로컬 사례 도우미·운영 CLI가 병합되었습니다. 완성된 공개 AI 서비스/배포 완료가 아닙니다.**
+**사례 저장·Codex OAuth 생성·운영 CLI·선택 Web GUI가 구현되어 있습니다. 완성된 공개 서비스나 사용자의 배포 완료를 뜻하지 않습니다.**
 
-현재 판정·정확한 병합 SHA·사용자 결정·남은 유한 gates는 [릴리스 체크리스트](docs/RELEASE_CHECKLIST.md)를 기준으로 확인하세요.
+설치/운영은 아래 가이드를, 이전 마일스톤 판정은 [릴리스 체크리스트](docs/RELEASE_CHECKLIST.md)를 참고하세요. 과거 검증 기록은 현재 실행 버전의 증거가 아닙니다.
 
 - Python / discord.py / SQLite로 실제 사례 저장·확정·조회·삭제 및 Discord 슬래시 명령을 구현했습니다.
 - 최초 지식은 **0건**입니다. 사전 구축 코퍼스나 채팅 기록 전체 수집은 없습니다.
@@ -28,23 +28,34 @@ Codex OAuth 승인 → 테스트 guild + `codex-oauth` 설정 → user service �
 [한국어 설치 가이드](docs/INSTALL_KO.md)에 정확한 준비 입력, 경로, 재실행/복구/제거 주의사항,
 `--prepare-only`의 NOT READY 경계를 정리했습니다. API 키 대체·sudo·자동 업그레이드는 없습니다.
 
-### 수동 CLI 설치 (기존 운영자용)
+**기존 설치 업그레이드:** [실행본 확인 → 중지·백업 → 전체 패키지 설치 → 검증·롤백](docs/UPGRADE_KO.md).
+`git pull`이나 새 `install.sh` 재실행은 업그레이드가 아닙니다. 설치기 런처는
+`~/.local/share/discord-helper-install/discord-helper`이며 PATH에 자동 등록되지 않습니다.
+
+### 수동 CLI 설치 (신규·개발 환경)
 
 권장: 전용 **비-root** 사용자, Python 3.11+, `python3-venv`, 사용자 systemd. Git checkout에서 실행합니다. 시스템 패키지 설치와 계정 생성은 운영자가 별도 처리합니다. 이 프로젝트는 sudo, 방화벽 변경, 자동 서버 배포를 하지 않습니다.
 
 ```bash
 git clone https://github.com/me0kmin27/GPT-Discord-Bot.git
 cd GPT-Discord-Bot
+# 검토한 전체 SHA로 교체; checkout 실패 시 이후 명령을 실행하지 마세요.
+git checkout --detach REVIEWED_SHA
 python3 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install '.[test]'
+.venv/bin/python -m pip install .
 export PATH="$PWD/.venv/bin:$PATH"
 discord-helper doctor
-discord-helper run --check
+discord-helper --config-dir "$PWD/.runtime/check/config" --data-dir "$PWD/.runtime/check/data" run --check
 discord-helper install
 ```
 
 `install`은 현재 Python 경로를 고정한 **사용자 서비스** `discord-helper.service`를 설치하고 `daemon-reload`합니다. 자동 시작/부팅 활성화는 하지 않습니다. 동일한 설치는 반복 가능하며, 다른 내용의 기존 unit이나 인증 파일을 덮어쓰지 않습니다. 저장소/가상환경을 옮겼다면 기존 unit을 검토한 후 다시 설치해야 합니다. PATH 설정 대신 `.venv/bin/discord-helper`를 사용해도 됩니다. `pipx install .` 환경에서도 같은 실행 파일이 생성됩니다.
+
+직접 파일 실행(`python manage.py`) 대신 `.venv/bin/python -I -m helperbot.manage --help`를
+사용하세요. 선택 GUI는 `.[web]`, 개발 전체 테스트는 `.[test,web]`가 필요합니다.
+위 임시 DB 검사는 인증 없는 구성 점검입니다. 수동 설치는 토큰/OAuth/테스트 guild를
+자동 설정하지 않으며 기본 공급자는 비활성, guild 미설정은 전역 sync입니다.
 
 ### 웹 검색 및 모델 선택
 
@@ -110,7 +121,7 @@ discord-helper stop
 |---|---|
 | `/channel enabled:true` | 서버 관리자만 현재 부모 텍스트 채널 참여 설정 |
 | `/channel enabled:false confirm_purge:true` | 비활성화하면서 채널 사례와 대화 삭제 |
-| `/ask question:...` | 명시적 질문을 후보로 저장. 질문 기반 어휘 검색으로 확정 사례 최대 3건 조회. AI 생성 아님 |
+| `/ask question:...` | 질문을 후보로 저장, 관련 확정 사례 최대 3건 조회. `codex-oauth` 선택 시 AI 답변을 생성·후보로 보존하며 자동 확정하지 않음 |
 | `/resolved case_id:... solution:...` | 원 질문자 또는 **현재 채널과 부모 채널의 메시지 관리 권한자**만 직접 작성한 해결 요약 확정 |
 | `/reset` | 현재 사용자·대화의 문맥만 초기화. 후보/확정 사례는 유지 |
 | `/forget case_id:숫자 confirm:true` | 서버 관리자: 현재 부모 채널에 속한 해당 사례 및 채널 문맥 삭제 |
@@ -132,7 +143,7 @@ discord-helper stop
 - 점수는 질문 특징과 사례 특징(질문 ∪ 해결 요약)의 **서로 다른 공통 특징 수**입니다. 단어/한글 조각은 각각 1점, 동일 단어의 반복은 가산하지 않습니다. 양수 점수 내림차순, 동점이면 사례 ID 내림차순으로 **최대 3개**를 반환합니다. 현재 질문만 검색에 사용하며 과거 대화로 무관한 결과를 끌어오지 않습니다.
 - 질문·해결 요약은 기존 각 2000자 입력 한도를 유지합니다. 검색은 최대 1000행의 각 두 필드만 특징화하며 DB 전체나 다른 tenant를 Python에서 훑지 않습니다. 요청별 동기 로컬 계산이며 지연시간 SLA/분산 부하 제어는 아닙니다. 총 저장 상한을 늘리거나 기존 데이터가 초과해도 검색 창은 늘어나지 않습니다. 창 밖 자료는 **보존되지만 검색되지 않을 수 있습니다**.
 - 점수가 0이거나 검색 특징이 없는 기호/이모지만 입력하면 **일치 사례 없음**으로 안내합니다. 무관한 최신 사례로 대체하거나 DB에 확정 사례가 아예 없다고 단정하지 않습니다. 다른 핵심어로 재질문할 수 있습니다. 질문 자체는 여전히 후보로 저장됩니다.
-- 결과는 사용자가 작성한 해결 요약 일부와 **원래 해결 접수 메시지 링크**입니다. 검색용 정규화는 원문/출처를 바꾸지 않습니다. `/resolved`는 로컬 사례를 확정할 뿐, AI 훈련·파인튜닝·자동 학습을 하지 않습니다. 검색은 새 답변을 생성하지 않으며 **Codex 비활성, 외부 임베딩/모델 호출/API 키 대체 없음**을 유지합니다.
+- 결과는 사용자가 작성한 해결 요약 일부와 **원래 해결 접수 메시지 링크**입니다. 검색용 정규화는 원문/출처를 바꾸지 않습니다. `/resolved`는 로컬 사례를 확정할 뿐, AI 훈련·파인튜닝·자동 학습을 하지 않습니다. 어휘 검색 자체에는 외부 임베딩/모델 호출이 없습니다. 별도 `codex-oauth` 공급자가 선택되면 관련 사례가 없어도 답변 생성을 시도하고 미확정 후보로 저장합니다. API 키로 대체하지 않습니다.
 
 **한계:** 형태소 분석, 동의어/번역, 오탈자 교정, 의미 검색, 진실 판정은 없습니다. 한글 조사·어미/흔한 단어·짧은 단어 때문에 우연한 일치가 생길 수 있고, 띄어쓰기·활용·표기 차이는 누락을 만들 수 있습니다. 숫자/영문 단어는 정규화 후 단어 일치이며 부분 문자열 검색이 아닙니다. 결과는 검토할 참고 사례이지 정답/신뢰도 점수가 아닙니다. 검색 특징은 DB에 따로 저장/캐시하지 않아 삭제 후 재조회에 남지 않습니다. 기존 receipt/pending 삭제 취소, admission, 저장 용량 경계를 유지하며 오프라인 삭제 누락·이미 전송된 Discord 게시물·외부 백업 한계는 그대로입니다. 스키마 변경/데이터 마이그레이션/자동 삭제는 없습니다.
 
@@ -211,7 +222,7 @@ Store 생성 시 한 번 검증하며 잘못된 값으로는 DB를 열지 않습
 |---|---|
 | `~/.config/discord-helper/credentials.json` | Discord 토큰, 디렉터리 700 / 파일 600 |
 | `~/.local/share/discord-helper/state.db` | 사례/문맥 SQLite |
-| `~/.local/share/discord-helper/codex/` | 선택적 앱 전용 Codex 인증. **공개 저장소/백업 금지** |
+| `~/.local/share/discord-helper/codex/` | 앱 전용 Codex 인증. **공개/공유 백업 금지**, 승인된 private 복구 백업만 허용 |
 | `~/.config/systemd/user/discord-helper.service` | 토큰 없는 사용자 unit |
 | `.runtime/` | 개발용 테스트 DB/진행 기록, Git 제외 |
 
@@ -226,6 +237,7 @@ Store 생성 시 한 번 검증하며 잘못된 값으로는 DB를 열지 않습
 ## 개발·검증
 
 ```bash
+.venv/bin/python -m pip install '.[test,web]'
 mkdir -p .runtime
 .venv/bin/python -m pytest -q --basetemp=.runtime/pytest
 .venv/bin/python -m compileall -q helperbot

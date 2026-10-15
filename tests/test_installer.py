@@ -37,6 +37,14 @@ def test_checkout_pins_commit_and_refuses_unowned_or_changed_source(tmp_path):
     checkout = b.prepare_checkout(source, root)
     assert (checkout/'file').read_text() == 'pinned'
     assert b.prepare_checkout(source, root) == checkout
+    original_marker = (root/'installer.json').read_bytes()
+    (source/'file').write_text('new reviewed revision')
+    subprocess.run(['git', '-C', str(source), 'commit', '-am', 'next'], check=True, capture_output=True)
+    with pytest.raises(b.InstallError, match='no automatic upgrades'):
+        b.prepare_checkout(source, root)
+    assert (root/'installer.json').read_bytes() == original_marker
+    assert (checkout/'file').read_text() == 'pinned'
+    subprocess.run(['git', '-C', str(source), 'checkout', '--detach', 'HEAD~1'], check=True, capture_output=True)
     (checkout/'file').write_text('operator edit')
     with pytest.raises(b.InstallError, match='changed'):
         b.prepare_checkout(source, root)
@@ -62,6 +70,13 @@ def test_interactive_finish_preserves_settings_and_stops_on_login_failure(tmp_pa
         b.finish(paths)
     assert calls == ['setup']
     assert json.loads((paths.config/'runtime.json').read_text()) == {'provider': 'codex-oauth', 'sync_guild': 123}
+    before = (paths.config/'runtime.json').read_bytes()
+    # A resume must preserve explicit defaults and non-default nested choices too.
+    selected = json.loads(before)
+    selected['codex'] = {'model': 'fixture-model', 'model_reasoning_effort': 'low',
+                         'web_search': 'live', 'setup_timeout_seconds': 3,
+                         'generation_timeout_seconds': 45}
+    (paths.config/'runtime.json').write_text(json.dumps(selected) + '\n')
     before = (paths.config/'runtime.json').read_bytes()
     monkeypatch.setattr(b, 'oauth_ready', lambda paths: True)
     monkeypatch.setattr(b, 'offline_check', lambda *a, **kw: None)
@@ -156,6 +171,9 @@ def test_installer_help_is_read_only_and_rejects_unknown_args(tmp_path):
     result = subprocess.run(['bash', str(ROOT/'install.sh'), '--help'], env=env, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
     assert '--prepare-only' in result.stdout
+    assert 'not an upgrade command' in result.stdout
+    assert 'docs/UPGRADE_KO.md' in result.stdout
+    assert 'Web GUI' in result.stdout
     assert not (tmp_path/'.local').exists() and not (tmp_path/'.config').exists()
     result = subprocess.run(['bash', str(ROOT/'install.sh'), '--unknown'], env=env, text=True, capture_output=True)
     assert result.returncode != 0

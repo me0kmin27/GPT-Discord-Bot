@@ -1,4 +1,11 @@
-# Linux 원커맨드 설치 (Codex OAuth 고정)
+# Linux 신규 설치·재실행 (Codex OAuth 고정)
+
+| 상황 | 진행 경로 |
+|---|---|
+| 처음 설치 | 검토한 checkout에서 `bash install.sh` |
+| 같은 revision 설치 재개 | 최초 XDG 경로로 설치본 `app/install.sh` 재실행 |
+| 운영 버전 교체 | [백업·수동 업그레이드·롤백](UPGRADE_KO.md) — 설치기 재실행 아님 |
+| 선택 Web GUI 추가 | [Web GUI 안내](WEB_GUI_KO.md) — 별도 `[web]` 의존성·관리자·서비스 |
 
 검토한 Git checkout에서 **일반 사용자 터미널**로 다음 한 줄을 실행합니다.
 
@@ -10,7 +17,22 @@ bash install.sh
 배포할 commit을 검토/checkout하세요. 설치기는 그 **정확한 HEAD**를 별도 checkout에
 복사·고정합니다. 이후 원본 디렉터리를 지워도 설치 경로는 유지됩니다.
 root/sudo 실행, OS 패키지 자동 설치, 자동 업그레이드, API 키 대체는 없습니다.
-이 작업은 스크립트/CI 검증이며 실제 서버 배포·계정 로그인 완료가 아닙니다.
+이 문서/CI의 통과는 사용자의 서버 배포·계정 로그인 완료를 뜻하지 않습니다.
+
+신규 소스 준비 예시 (`REVIEWED_SHA`는 검토/CI 통과한 전체 commit SHA로 교체):
+
+```bash
+git clone https://github.com/me0kmin27/GPT-Discord-Bot.git
+cd GPT-Discord-Bot
+git checkout --detach REVIEWED_SHA
+git status --short
+bash install.sh --help
+# 위 checkout/검토가 성공하고 준비가 끝났을 때만:
+bash install.sh
+```
+
+실패한 checkout 뒤 설치를 계속하지 마세요. 원본 checkout의 추적 파일 수정은 거절되며,
+비밀/운영 파일을 소스 디렉터리에 두지 않습니다.
 
 ## 미리 준비할 것
 
@@ -79,16 +101,21 @@ SQLite 저장 흐름을 사용하며 자동 confirmed 사례가 되지는 않습
 | 설치 소유권·고정 checkout·venv | `~/.local/share/discord-helper-install/` |
 | 관리 실행 파일 | `~/.local/share/discord-helper-install/discord-helper` |
 | Discord token | `~/.config/discord-helper/credentials.json` (600) |
-| 공급자/테스트 guild | `~/.config/discord-helper/runtime.json` (600) |
+| 공급자/guild/선택 codex 모델·검색·예산 | `~/.config/discord-helper/runtime.json` (600) |
 | 데이터베이스 | `~/.local/share/discord-helper/state.db` |
 | Codex 패키지 | `~/.local/share/discord-helper/tools/` |
 | 앱 OAuth | `~/.local/share/discord-helper/codex/` |
 | 공식 로그인 HOME | `~/.local/share/discord-helper/login-home/` |
 | 사용자 unit | `~/.config/systemd/user/discord-helper.service` |
+| 선택 GUI 관리자 | `~/.config/discord-helper/web-admin.json` (600) |
+| 선택 GUI unit | `~/.config/systemd/user/discord-helper-web.service` |
 
 XDG_CONFIG_HOME/XDG_DATA_HOME도 지원하며 최초 설치 경로를 기록합니다. 재실행 때 바꾸면
 중단합니다. 런처와 unit은 경로를 고정합니다. 설치 root는 위 고정 경로입니다.
-같은 commit의 `bash install.sh`를 재실행하면 기존 토큰·DB·설정을 덮어쓰지 않습니다.
+같은 commit의 `bash install.sh`는 기존 토큰·DB·설정(중첩 codex 선택 포함)을 보존합니다.
+다만 대화형 재실행은 인증 점검과 봇 서비스 **start**까지 수행하므로 단순 상태 조회가 아닙니다.
+`software-ready` marker가 있으면 패키지/Codex 재설치는 건너뛰고 pip check·버전·offline 점검을
+실행합니다. 손상된 설치를 자동 수리하거나 최신 패키지로 교체하는 기능이 아닙니다.
 다른 commit으로 자동 업그레이드하지 않습니다. 기존 설치를 재개하려면:
 
 ```bash
@@ -98,15 +125,30 @@ bash ~/.local/share/discord-helper-install/app/install.sh
 패키지/네트워크 실패 후 재실행 가능하지만, clone/venv가 중간에 끊겨 구조가 불완전하면
 안전하게 중단하고 보존합니다. 표시된 소유 경로를 직접 확인한 뒤 복구하세요. 기존의
 별도 도구 설치나 다른 Python을 가리키는 unit은 **자동 인수/삭제/교체하지 않습니다**.
-기존 운영자는 서비스를 먼저 멈추고 private 백업·설치 경로·unit diff를 검토해야 합니다.
+기존 운영자의 버전 교체는 [수동 업그레이드 절차](UPGRADE_KO.md)를 따르세요.
+새 checkout만 받거나 `app`에 git pull을 해도 venv의 설치 패키지가 바뀌지 않습니다.
+marker 삭제/수정으로 고정 revision 검사를 우회하지 마세요.
 
 ```bash
+~/.local/share/discord-helper-install/discord-helper overview
 ~/.local/share/discord-helper-install/discord-helper status
 ~/.local/share/discord-helper-install/discord-helper doctor
 ~/.local/share/discord-helper-install/discord-helper logs
 ~/.local/share/discord-helper-install/discord-helper restart
 ~/.local/share/discord-helper-install/discord-helper stop
 ```
+
+일반 셸 PATH에는 위 런처가 자동 추가되지 않습니다. 전체 경로를 사용하세요.
+패키지 CLI를 직접 실행할 때는 설치된 Python의 모듈 진입점을 사용합니다:
+
+```bash
+~/.local/share/discord-helper-install/venv/bin/python -I -m helperbot.manage --help
+```
+
+`python manage.py` 또는 `python helperbot/manage.py`로 실행하지 마세요. 사용자 지정 경로는
+`--config-dir`, `--data-dir`, `--unit-dir`를 하위 명령 앞에 전달하며, 설치 런처는 이 경로를 고정합니다.
+GUI는 별도 프로세스입니다. 봇 `start`가 GUI까지 켜지는 것은 아닙니다. 저장/재시작/실응답의
+차이는 [운영 상태 안내](OPERATOR_USABILITY.md)를 참고하세요.
 
 `logs`는 자신의 터미널에서만 보고 민감한 운영 자료를 공개 이슈에 붙이지 마세요.
 설치기 출력에 secrets를 포함한 디버그 traceback을 남기지 않으므로 패키지 실패는

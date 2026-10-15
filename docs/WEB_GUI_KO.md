@@ -8,7 +8,8 @@
 ## 설치와 최초 관리자
 
 검토한 **현재 checkout**과 전용 가상환경에서 실행합니다. 아래는 신규/수동 설치 예시입니다.
-이미 설치된 운영 봇은 자동 업그레이드하지 말고 소스·의존성·서비스 경로를 함께 검토하세요.
+이미 설치된 운영 봇은 [백업·수동 업그레이드 절차](UPGRADE_KO.md)를 먼저 따르세요.
+소스 checkout만 바꿔서는 venv의 설치 패키지가 바뀌지 않습니다.
 
 ```bash
 python3 -m venv .venv
@@ -32,10 +33,21 @@ python3 -m venv .venv
 
 기존 `bash install.sh`는 기존 설치/자동화 호환성을 위해 **봇 CLI 설치 흐름을 그대로**
 유지합니다. GUI 의존성 설치·관리자 생성·GUI 실행을 자동으로 추가하지 않았습니다.
-선택 GUI는 위 `[web]` 설치와 별도 `gui setup/run`으로 명시적으로 활성화하세요.
-원커맨드 설치본은 설치된 고정 checkout/venv를 대상으로 리뷰된 업그레이드 후
-`venv/bin/python -m pip install '검토된-checkout[web]'`를 실행해야 하며,
-운영 호스트에서 무작정 새 `install.sh`를 다시 실행하는 업그레이드는 지원하지 않습니다.
+선택 GUI는 `[web]` 설치와 별도 `gui setup/run`으로 명시적으로 활성화하세요.
+원커맨드 설치본은 위 `.venv`를 새로 만드는 대신 **기존 설치 venv**에 검토한 소스의
+`[web]`를 설치합니다. 봇과 GUI가 같은 실행 패키지/config를 사용하도록 업그레이드 가이드의
+중지·백업·pip 설치·readback을 먼저 완료하세요. 새 `install.sh` 재실행은 업그레이드가 아닙니다.
+
+```bash
+CLI="$HOME/.local/share/discord-helper-install/discord-helper"
+"$CLI" gui setup       # 최초 관리자만; 기존 관리자면 생략
+"$CLI" gui install     # unit 저장만, 봇 unit과 별개
+"$CLI" gui start
+"$CLI" overview
+```
+
+전경 실행을 원하면 `gui install/start` 대신 `"$CLI" gui run`을 사용합니다.
+같은 포트에 전경/서비스를 동시에 실행하지 마세요. 관리자 생성만으로 GUI는 시작되지 않습니다.
 
 ## 원격 접근은 SSH 포워딩
 
