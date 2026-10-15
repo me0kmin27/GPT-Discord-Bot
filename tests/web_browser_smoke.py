@@ -43,6 +43,11 @@ def main():
                '--data-dir', str(paths.data), '--unit-dir', str(paths.units)]
         def command(args):
             return subprocess.run(cli+args, cwd=root, check=True, text=True, capture_output=True).stdout
+        overview = json.loads(command(['overview', '--json']))
+        assert overview['applied'] is None
+        assert overview['bot']['unit'] == 'discord-helper.service'
+        assert overview['web']['unit'] == 'discord-helper-web.service'
+        assert 'gui start' in command(['overview'])
         shown = json.loads(command(['settings', 'show']))
         saved = json.loads(command(['settings', 'set', '--revision', shown['revision'],
                                     '--model', 'synthetic-cli-model']))
@@ -89,6 +94,11 @@ def main():
                 page.wait_for_url(base+'/')
                 assert page.locator('#model').input_value() == 'synthetic-cli-model'
                 assert page.locator('strong').inner_text() == '확인되지 않음'
+                assert page.get_by_role('heading', name='봇 / Web GUI 실행 상태').is_visible()
+                assert 'discord-helper-web.service' in page.locator('main').inner_text()
+                page.locator('summary').click()
+                assert f'ssh -N -L {port}:127.0.0.1:{port}' in page.locator('details').inner_text()
+                assert f'http://127.0.0.1:{port}' in page.locator('details').inner_text()
                 assert page.locator('.card').first.evaluate('(e) => getComputedStyle(e).borderRadius') == '8px'
                 # Submit the actual rendered form changing only model. Compare every
                 # raw key, not resolved values (which conceal omission regressions).
@@ -152,6 +162,7 @@ def main():
                 # Deliberately do NOT click restart: no live service is authorized here.
                 page.get_by_role('link', name='취소', exact=True).click()
                 page.set_viewport_size({'width': 390, 'height': 844})
+                page.locator('summary').click()
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
                 assert page.get_by_role('button', name='로그아웃', exact=True).bounding_box()['height'] <= 52
                 shot('07-settings-mobile')
@@ -162,7 +173,8 @@ def main():
             assert all(target.read_bytes() == content for target, content in sensitive.items())
             assert sorted(p.name for p in paths.data.iterdir()) == ['codex', 'state.db']
             manifest = {'synthetic_only': True, 'screenshots': shots, 'count': len(shots),
-                        'verified': ['packaged_waitress', 'cli_show_set_readback', 'browser_login_logout',
+                        'verified': ['packaged_waitress', 'operator_overview_cli_json', 'separate_service_cards',
+                                     'actual_port_tunnel_guidance', 'cli_show_set_readback', 'browser_login_logout',
                                      'gui_save_cli_readback', 'omitted_defaults_preserved',
                                      'explicit_defaults_preserved', 'deliberate_default_reset',
                                      'all_unedited_config_keys_preserved', 'validation_no_write', 'csrf_rejection',
