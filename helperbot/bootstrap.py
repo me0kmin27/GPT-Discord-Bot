@@ -237,7 +237,12 @@ def prepare_software(checkout, root):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='User-local Linux installer; no sudo, no API-key fallback.')
+    parser = argparse.ArgumentParser(
+        description='User-local Linux installer; no sudo, no API-key fallback.',
+        epilog=('Fresh install or resume the same pinned revision; not an upgrade command. '
+                'A completed software preparation is not reinstalled on rerun. '
+                'Web GUI dependencies/setup are optional and separate. '
+                'See docs/INSTALL_KO.md and docs/UPGRADE_KO.md.'))
     parser.add_argument('--prepare-only', action='store_true', help='Install pinned software only; no secrets, login or service start; NOT ready')
     args = parser.parse_args(argv)
     os.umask(0o077)
