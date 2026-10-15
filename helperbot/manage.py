@@ -13,6 +13,11 @@ import argparse
 import asyncio
 import fcntl
 from contextlib import contextmanager
+if __name__ == '__main__' and not __package__:
+    print('Do not run manage.py directly or with sudo. Use installed discord-helper, '
+          'or the installed Python: -m helperbot.manage (from outside helperbot/).', file=sys.stderr)
+    raise SystemExit(2)
+
 from .core import Store
 from .discord_app import create_client
 from .provider import build_provider
@@ -294,6 +299,8 @@ def main(argv=None):
     foreground.add_argument('--sync-guild', type=int)
     foreground.add_argument('--provider', choices=['disabled-codex', 'codex-oauth'], default=None)
     foreground.add_argument('--codex-executable', type=Path, help='Absolute pinned official native binary; default app-local install')
+    overview = subs.add_parser('overview', help='Read-only bot + Web GUI service guidance (no raw logs)')
+    overview.add_argument('--json', action='store_true', help='Machine-readable service snapshots; not readiness')
     settings = subs.add_parser('settings', help='Shared CLI/Web GUI settings operations')
     settings_sub = settings.add_subparsers(dest='settings_action', required=True)
     settings_sub.add_parser('show')
@@ -314,7 +321,25 @@ def main(argv=None):
     args = parser.parse_args(argv)
     paths = Paths(args.config_dir.absolute(), args.data_dir.absolute(), args.unit_dir.absolute())
     try:
-        if args.command == 'settings':
+        if args.command == 'overview':
+            from .settings_ops import operator_overview
+            report = operator_overview()
+            if args.json:
+                print(json.dumps(report, ensure_ascii=True))
+            else:
+                for key in ('bot', 'web'):
+                    item = report[key]
+                    print(item['unit'] + ': ' + json.dumps(item['status'], ensure_ascii=True))
+                    print(item['message'])
+                    if item['command']:
+                        print(item['command'])
+                print('저장된 설정: settings show. 실제 적용 상태: 확인되지 않음.')
+                print('봇 start와 gui start는 별개입니다. 시작은 enable/자동 시작을 변경하지 않습니다.')
+                print('UnitFileState=disabled는 자동 시작 비활성이지 실행 실패가 아닙니다. Linger는 별도 정책이며 여기서 확인/변경하지 않습니다.')
+                print('sudo 또는 python manage.py 대신 설치된 discord-helper / 설치된 Python의 -m helperbot.manage를 사용하세요.')
+                print('기본 GUI: http://127.0.0.1:8765 — 원격이면 동일 포트 SSH 터널 필요. 사용자 지정 포트는 양쪽 모두 맞추세요.')
+                print('ssh -N -L 8765:127.0.0.1:8765 USER@HOST (USER@HOST를 서버 계정으로 교체)')
+        elif args.command == 'settings':
             from .settings_ops import read_settings, save_settings, apply_settings, EDITABLE
             if args.settings_action == 'show':
                 result = read_settings(paths)

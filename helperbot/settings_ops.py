@@ -19,10 +19,14 @@ TIMEOUT_DEFAULTS = {'setup_timeout_seconds': DEFAULT_SETUP_TIMEOUT,
                     'generation_timeout_seconds': DEFAULT_GENERATION_TIMEOUT}
 
 
-def service_status(*, runner=subprocess.run):
-    fields = ('ActiveState', 'SubState', 'Result', 'ExecMainStatus', 'NRestarts')
+def service_status(*, unit=UNIT, runner=subprocess.run):
+    from .web_service import WEB_UNIT
+    if unit not in (UNIT, WEB_UNIT):
+        raise ValueError('Unsupported service unit')
+    required = ('ActiveState', 'SubState', 'Result', 'ExecMainStatus', 'NRestarts')
+    fields = required + ('LoadState', 'UnitFileState')
     try:
-        result = runner(['systemctl', '--user', 'show', UNIT,
+        result = runner(['systemctl', '--user', 'show', unit,
                          '--property=' + ','.join(fields)],
                         capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
@@ -34,9 +38,35 @@ def service_status(*, runner=subprocess.run):
         key, sep, value = line.partition('=')
         if sep and key in fields and re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', value):
             status[key] = value
-    if not all(key in status for key in fields):
+    if not all(key in status for key in required):
         return {'available': False}
     return status
+
+
+def operator_overview(*, runner=subprocess.run, bot_status=None):
+    """Read-only snapshots, never readiness or runtime-settings attestation."""
+    from .web_service import WEB_UNIT
+    report = {'applied': None}
+    for key, unit in (('bot', UNIT), ('web', WEB_UNIT)):
+        status = (bot_status if key == 'bot' and bot_status is not None
+                  else service_status(unit=unit, runner=runner))
+        command = None
+        if not status['available']:
+            message = '사용자 systemd 상태 확인 불가. 서비스 계정의 로그인 세션에서 확인하세요.'
+        elif status.get('LoadState') == 'not-found':
+            message = '서비스 미설치. 설치된 CLI와 경로를 확인한 뒤 install 또는 gui install을 실행하세요.'
+        elif status.get('LoadState') != 'loaded':
+            message = '서비스 로드 상태를 확인하지 못했습니다. 로컬에서 유닛 구성을 점검하세요.'
+        elif status['ActiveState'] == 'inactive':
+            message = '서비스가 중지되어 있습니다. 필요할 때만 아래 명령으로 시작하세요.'
+            command = 'systemctl --user start ' + unit
+        elif status['ActiveState'] == 'failed':
+            message = '서비스 실패. 원인을 점검한 뒤 명시적으로 재시작하세요.'
+            command = 'systemctl --user restart ' + unit
+        else:
+            message = '서비스 상태 스냅샷입니다. active도 Discord 연결·설정 적용 성공의 증거는 아닙니다.'
+        report[key] = {'unit': unit, 'status': status, 'message': message, 'command': command}
+    return report
 
 
 def apply_settings(paths, expected_revision, confirmed, *, runner=subprocess.run):

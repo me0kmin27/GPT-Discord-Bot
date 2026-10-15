@@ -2,6 +2,18 @@
 <div class="heading"><div><p class="eyebrow">BOT SETTINGS</p><h1>봇 설정</h1><p>저장과 적용을 분리하여 안전하게 관리합니다.</p></div><form method="post" action="/logout">{{ csrf() }}<button class="secondary">로그아웃</button></form></div>
 {% if message %}<p role="status" class="notice">{{ message }}</p>{% endif %}
 <div class="summary"><section class="card"><h2>저장된 설정</h2><p>아래 양식은 디스크에서 읽은 설정입니다.</p><code>{{ config.revision[:12] }}</code><p class="hint">제공자: {{ config.provider }} · 변경 불가</p></section><section class="card"><h2>실제 적용 상태</h2><strong>확인되지 않음</strong><p>봇이 사용 중인 설정을 보고하지 않습니다. 저장 또는 서비스 active 상태만으로 적용 완료를 판단하지 않습니다.</p></section></div>
+<section class="card" aria-labelledby="runtime-heading"><h2 id="runtime-heading">봇 / Web GUI 실행 상태</h2><p>서로 다른 사용자 서비스입니다. GUI 접속 성공은 봇 실행 성공을 뜻하지 않습니다.</p>
+{% for key,label in [('bot','Discord 봇'),('web','Web GUI')] %}{% set item = overview[key] %}
+<h3>{{ label }} · <code>{{ item.unit }}</code></h3>
+{% if item.status.available %}<dl>{% for field,value in item.status.items() if field != 'available' %}<dt>{{ field }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>{% else %}<p>상태 확인 불가 (수동 실행 환경일 수도 있습니다)</p>{% endif %}
+<p>{{ item.message }}</p>{% if item.command %}<code>{{ item.command }}</code>{% endif %}
+{% endfor %}<p class="hint">UnitFileState=disabled는 자동 시작 비활성입니다. 시작과 자동 시작은 별개이며 Linger 정책은 여기서 확인하거나 변경하지 않습니다. 위 명령은 안내일 뿐 실행되지 않습니다.</p><a href="/">상태 새로고침 (저장하지 않은 입력은 사라짐)</a></section>
+<details class="card"><summary>시작 방법 / 원격 접속 안내</summary>
+<p>설치된 <code>discord-helper start</code>는 봇만, <code>discord-helper gui start</code>는 GUI만 시작합니다. sudo 또는 helperbot 폴더의 python manage.py 직접 실행은 사용하지 마세요.</p>
+<p>설치된 Python으로 <code>python -m helperbot.manage overview</code>를 실행할 수도 있습니다. 설치 경로와 config/data/unit 디렉터리를 먼저 확인하세요.</p>
+<p>이 GUI의 접속 주소: <code>http://127.0.0.1:{{ port }}</code>. 원격 서버라면 로컬 PC에서 동일 포트 터널을 열고 이 주소를 사용하세요. USER@HOST는 실제 서버 계정으로 교체합니다.</p>
+<code>ssh -N -L {{ port }}:127.0.0.1:{{ port }} USER@HOST</code>
+<p>LAN 주소 접속이나 bind 변경만으로는 허용되지 않습니다. 공개 노출·자동 시작 설정은 별도 승인이 필요합니다.</p></details>
 <form method="post" action="/save">{{ csrf() }}<input type="hidden" name="revision" value="{{ config.revision }}">
 <section class="card"><h2>응답 생성</h2><p>ChatGPT Codex OAuth 인증은 기존 설정을 그대로 유지합니다.</p><div class="fields"><div><label for="model">모델 식별자</label><input id="model" name="model" maxlength="128" value="{{ config['values'].model }}" placeholder="Codex 기본값"><p class="hint">빈 값은 Codex 기본값. 사용 가능한 모델인지는 실제 요청에서 확인됩니다.</p></div><div><label for="effort">추론 노력</label><input id="effort" name="model_reasoning_effort" maxlength="128" value="{{ config['values'].model_reasoning_effort }}" placeholder="Codex 기본값"><p class="hint">모델이 지원하는 값만 사용하세요.</p></div><div><label for="web_search">호스팅 웹 검색</label><select id="web_search" name="web_search">{% for value,label in [('', '기본값 사용 (사용 안 함)'),('disabled','사용 안 함'),('live','실시간 검색 (live)')] %}<option value="{{ value }}" {% if (config['values'].web_search if 'web_search' in config.configured else '') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="hint">live 사용 시 질문이 호스팅 검색으로 전송될 수 있습니다.</p></div></div></section>
 <section class="card"><h2>단계별 제한 시간</h2>

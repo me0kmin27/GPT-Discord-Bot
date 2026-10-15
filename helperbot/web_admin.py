@@ -15,7 +15,7 @@ from flask import Flask, abort, redirect, render_template, request, session, url
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import check_password_hash, generate_password_hash
 from .manage import ManagementError, private_dir, secure_create
-from .settings_ops import read_settings, save_settings, service_status, apply_settings
+from .settings_ops import read_settings, save_settings, service_status, apply_settings, operator_overview
 
 
 def bootstrap_admin(paths, password=None):
@@ -142,7 +142,9 @@ def create_app(paths, *, port=8765):
     @app.get('/')
     @authenticated
     def settings():
-        return render_template('settings.html', config=read_settings(paths), status=service_status(),
+        status = service_status()
+        return render_template('settings.html', config=read_settings(paths), status=status,
+                               overview=operator_overview(bot_status=status), port=port,
                                message='설정 저장 완료. 자동 적용이나 봇 재시작은 수행하지 않았습니다.' if session.pop('saved', False) else None)
 
     @app.post('/save')
