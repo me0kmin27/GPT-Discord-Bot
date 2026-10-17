@@ -56,7 +56,7 @@ async def test_nested_layer_owns_only_its_actual_deadline(tmp_path, monkeypatch,
     from helperbot.provider import Request
     if layer == 'preparation':
         obj = CodexOAuthProvider('/synthetic/codex', tmp_path)
-        # Zero budget through test injection; production defaults stay 20.
+        # Zero budget through test injection; production defaults stay 60/240.
         obj.setup_timeout = 0
         async def blocked(*args):
             await asyncio.Event().wait()
@@ -100,8 +100,8 @@ async def test_immediate_preparation_timeout_has_phase_budget_not_expiry(tmp_pat
     assert record['stage'] == 'preparation'
     assert record['timeout_origin'] == 'child_or_native'
     assert record['category'] == 'timeout'
-    assert record['deadline_ms'] == 3000
-    assert 0 <= record['elapsed_ms'] < 3000
+    assert record['deadline_ms'] == 60000
+    assert 0 <= record['elapsed_ms'] < 60000
     assert 'SECRET' not in repr(record)
 
 

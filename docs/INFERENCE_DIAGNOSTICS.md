@@ -40,8 +40,8 @@ internal source filenames/line numbers are emitted. No absolute source paths,
 exception bodies, locals, prompts, answers, auth/account fields, or logs.
 `http_status` is currently null; no HTTP status is inferred from error text.
 Old installed providers that discard numeric codes continue to report null.
-Current phased providers use **preparation up to 3 seconds, then generation up to
-20 seconds** by default, without a competing total-20-second probe timer. Older
+Current phased providers use **preparation up to 60 seconds, then generation up to
+240 seconds** by default, without a competing total-20-second probe timer. Older
 installed providers retain their existing 20-second probe guard. See
 [the shared timeout contract](timeout-contract.md). This standalone probe builds
 a default provider; it does not load `runtime.json` model/search/budget overrides

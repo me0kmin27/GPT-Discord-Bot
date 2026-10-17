@@ -18,8 +18,10 @@ from .provider import ProviderReply, ProviderUnavailable
 from .async_utils import OwnedDeadlineExceeded, wait_owned
 
 CODEX_VERSION = '0.162.1'
-DEFAULT_SETUP_TIMEOUT = 3
-DEFAULT_GENERATION_TIMEOUT = 20
+DEFAULT_SETUP_TIMEOUT = 60
+DEFAULT_GENERATION_TIMEOUT = 240
+MAX_SETUP_TIMEOUT = 60
+MAX_GENERATION_TIMEOUT = 240
 MAX_FRAME = 65536
 MAX_WIRE = 1048576
 MAX_EVENTS = 2048
@@ -42,7 +44,7 @@ def validate_options(options=None):
         raise ValueError('Invalid Codex operator options')
     for key, value in options.items():
         if key in ('setup_timeout_seconds', 'generation_timeout_seconds'):
-            ceiling = 30 if key == 'setup_timeout_seconds' else 120
+            ceiling = MAX_SETUP_TIMEOUT if key == 'setup_timeout_seconds' else MAX_GENERATION_TIMEOUT
             if type(value) not in (int, float) or not 0 < value <= ceiling:
                 raise ValueError('Invalid Codex timeout')
             continue
@@ -172,10 +174,8 @@ class CodexOAuthProvider:
 
     def __init__(self, executable, data, *, timeout=DEFAULT_GENERATION_TIMEOUT,
                  setup_timeout=DEFAULT_SETUP_TIMEOUT, options=None):
-        if type(timeout) not in (int, float) or not 0 < timeout <= 120:
-            raise ValueError('Invalid Codex timeout')
-        if type(setup_timeout) not in (int, float) or not 0 < setup_timeout <= 30:
-            raise ValueError('Invalid Codex timeout')
+        validate_options({'setup_timeout_seconds': setup_timeout,
+                          'generation_timeout_seconds': timeout})
         self.options = validate_options(options)
         self.executable = Path(executable)
         self.data = Path(data)
@@ -285,9 +285,9 @@ class CodexOAuthProvider:
 
 class StdioClient:
     """One bounded sequential JSON-RPC connection; no subprocess shell or logging."""
-    def __init__(self, command, *, cwd, env, timeout=20, web_search=False, deadline_stage='transport'):
-        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 120:
-            raise ValueError('Invalid Codex timeout')
+    def __init__(self, command, *, cwd, env, timeout=DEFAULT_GENERATION_TIMEOUT,
+                 web_search=False, deadline_stage='transport'):
+        validate_options({'generation_timeout_seconds': timeout})
         self.timeout = timeout
         self.deadline = None
         self.deadline_stage = deadline_stage

@@ -13,7 +13,7 @@ from helperbot.inference_probe import safe_failure
 from test_codex_web_search import nested
 
 
-def protocol_clock(monkeypatch, setup, generation):
+def protocol_clock(monkeypatch, setup, generation, cleanup=0):
     loop = asyncio.get_running_loop()
     now = [loop.time()]
     monkeypatch.setattr(loop, 'time', lambda: now[0])
@@ -29,6 +29,7 @@ def protocol_clock(monkeypatch, setup, generation):
             return self
         async def __aexit__(self, *args):
             phases.append('cleanup')
+            await advance(cleanup)
         async def initialize(self):
             phases.append('initialize')
         async def rpc(self, method, params):
@@ -53,8 +54,8 @@ def protocol_clock(monkeypatch, setup, generation):
     return phases
 
 
-async def test_two_seconds_setup_plus_nineteen_generation_not_cut_by_service_twenty(tmp_path, monkeypatch):
-    phases = protocol_clock(monkeypatch, 2, 19)
+async def test_full_phase_budgets_and_cleanup_not_cut_by_service_total_timer(tmp_path, monkeypatch):
+    phases = protocol_clock(monkeypatch, 59, 239, cleanup=10)
     adapter = transport.CodexOAuthProvider('/synthetic/codex', tmp_path / 'runtime')
     with closing(Store(tmp_path / 'state.db')) as store:
         scope = Scope(1, 10, 10, 100, admin=True)
@@ -67,8 +68,9 @@ async def test_two_seconds_setup_plus_nineteen_generation_not_cut_by_service_twe
     assert not list((tmp_path / 'runtime').glob('request-*'))
 
 
-@pytest.mark.parametrize('setup,generation,stage,budget', [(4, 0, 'preparation', 3000),
-                                                        (2, 21, 'generation', 20000)])
+@pytest.mark.parametrize('setup,generation,stage,budget', [(61, 0, 'preparation', 60000),
+                                                        (59, 241, 'generation', 240000),
+                                                        (1, 241, 'generation', 240000)])
 async def test_phase_overrun_has_own_budget_and_no_later_phase(tmp_path, monkeypatch, setup, generation, stage, budget):
     phases = protocol_clock(monkeypatch, setup, generation)
     adapter = transport.CodexOAuthProvider('/synthetic/codex', tmp_path)
@@ -87,18 +89,19 @@ async def test_phase_overrun_has_own_budget_and_no_later_phase(tmp_path, monkeyp
 
 def test_phase_defaults_and_config_are_not_forwarded_to_codex(tmp_path):
     adapter = transport.CodexOAuthProvider('/synthetic/codex', tmp_path)
-    assert adapter.setup_timeout == 3
-    assert adapter.timeout == 20
+    assert adapter.setup_timeout == 60
+    assert adapter.timeout == 240
+    assert adapter.setup_timeout + adapter.timeout == 300
     options = {'setup_timeout_seconds': 2, 'generation_timeout_seconds': 25}
     adapter = transport.CodexOAuthProvider('/synthetic/codex', tmp_path, options=options)
     assert adapter.setup_timeout == 2 and adapter.timeout == 25
     assert not any('timeout_seconds' in value for value in adapter._command())
-    assert transport.DEFAULT_SETUP_TIMEOUT == 3
-    assert transport.DEFAULT_GENERATION_TIMEOUT == 20
+    assert transport.DEFAULT_SETUP_TIMEOUT == 60
+    assert transport.DEFAULT_GENERATION_TIMEOUT == 240
 
 
 @pytest.mark.parametrize('key', ['setup_timeout_seconds', 'generation_timeout_seconds'])
-@pytest.mark.parametrize('value', [True, '20', 0, -1, float('nan'), float('inf'), 121])
+@pytest.mark.parametrize('value', [True, '20', 0, -1, float('nan'), float('inf'), 241])
 def test_phase_config_strict_validation(tmp_path, key, value):
     with pytest.raises(ValueError):
         transport.CodexOAuthProvider('/synthetic/codex', tmp_path, options={key: value})

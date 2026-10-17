@@ -127,7 +127,7 @@ No partial text is published before terminal success and source/output validatio
 
 All non-message/reasoning items and unsupported notifications are rejected. Errors
 are sanitized; child stderr and server payloads are not logged. Each request has a
-preparation budget of up to 3 seconds followed by a fresh 20-second generation
+preparation budget of up to 60 seconds followed by a fresh 240-second generation
 budget by default (including turn/start and hosted search), not a fixed startup
 sleep. See [shared configuration and diagnostics](timeout-contract.md). Cleanup is
 outside these cooperative work budgets. Completion, errors, timeout and cancellation kill the

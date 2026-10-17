@@ -32,11 +32,35 @@ pytest.importorskip('flask_wtf')
 from test_settings_ops import paths_at
 
 
+def test_timeout_form_displays_current_defaults_limits_and_help(tmp_path):
+    from helperbot.web_admin import bootstrap_admin, create_app
+    from helperbot.settings_ops import read_settings
+    from flask import render_template
+    paths = paths_at(tmp_path)
+    bootstrap_admin(paths, 'synthetic-test-passphrase-only')
+    app = create_app(paths, port=8765)
+    with app.test_request_context('/'):
+        html = render_template('settings.html', config=read_settings(paths),
+                               status={'available': False},
+                               overview={key: {'status': {'available': False}}
+                                         for key in ('bot', 'web')}, port=8765)
+    form = SettingsForm(html).data
+    for key, maximum in [('setup_timeout_seconds', 60), ('generation_timeout_seconds', 240)]:
+        assert float(form[key]) == maximum
+        control = re.search(r'<input id="' + key + r'"[^>]+>', html)[0]
+        assert f'max="{maximum}"' in control
+        assert f'기본 {maximum}초' in html
+        assert f'0 초과 {maximum} 이하' in html
+    assert '300초' in html
+    assert '정리 시간은 별도' in html
+
+
 def csrf(response):
     return re.search(r'name="csrf_token" value="([^"]+)"', response.get_data(as_text=True))[1]
 
 
-@pytest.mark.parametrize('options', [{}, {'setup_timeout_seconds': 3, 'generation_timeout_seconds': 20},
+@pytest.mark.parametrize('options', [{}, {'setup_timeout_seconds': 60, 'generation_timeout_seconds': 240},
+                                      {'setup_timeout_seconds': 3, 'generation_timeout_seconds': 20},
                                       {'setup_timeout_seconds': 2.5, 'generation_timeout_seconds': 45},
                                       {'setup_timeout_seconds': 3, 'web_search': 'disabled'},
                                       {'generation_timeout_seconds': 20, 'web_search': 'live',
@@ -64,9 +88,10 @@ def test_model_only_rendered_form_preserves_all_other_config(tmp_path, options):
 
 @pytest.mark.parametrize('mode,value,status', [
     ('default', 'ignored', 302), ('override', '3', 302), ('override', '2.5', 302),
+    ('override', 'maximum', 302), ('override', 'over_maximum', 400),
     (None, '3', 400), ('invalid', '3', 400), ('override', '', 400),
     ('override', 'nan', 400), ('override', 'inf', 400), ('override', '0', 400),
-    ('override', '-1', 400), ('override', '121', 400), ('override', 'true', 400),
+    ('override', '-1', 400), ('override', '241', 400), ('override', 'true', 400),
 ])
 @pytest.mark.parametrize('key', ['setup_timeout_seconds', 'generation_timeout_seconds'])
 def test_timeout_mode_validation_reset_and_stale_form(tmp_path, mode, value, status, key):
@@ -89,6 +114,11 @@ def test_timeout_mode_validation_reset_and_stale_form(tmp_path, mode, value, sta
         del data[key + '_mode']
     else:
         data[key + '_mode'] = mode
+    maximum = 60 if key == 'setup_timeout_seconds' else 240
+    if value == 'maximum':
+        value = str(maximum)
+    elif value == 'over_maximum':
+        value = str(maximum + 0.01)
     data[key] = value
     before_bytes = target.read_bytes()
     assert client.post('/save', base_url=base, headers={'Origin': base}, data=data).status_code == status
