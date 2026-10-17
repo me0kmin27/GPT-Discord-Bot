@@ -1,5 +1,9 @@
 # Timeout investigation and phase-budget evidence
 
+Historical investigation record: the 3/20-second policy and test observations below
+are preserved as originally investigated, not the current defaults. The current
+60/240-second policy is specified in [timeout-contract.md](timeout-contract.md).
+
 Base: `a256f4d` (PR #19). Investigation did not access live auth, conversations or
 runtime databases, install packages, deploy code, or make authenticated inference.
 

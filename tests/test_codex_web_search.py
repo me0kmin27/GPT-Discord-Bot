@@ -56,7 +56,8 @@ def test_web_protocol_errors_retain_safe_diagnostic_categories(tmp_path):
 def test_nonsecret_operator_example_is_valid(tmp_path):
     example = json.loads((Path(__file__).parents[1] / 'examples/runtime.codex-web-search.json').read_text())
     assert example['codex'] == {'web_search': 'live', 'model': 'gpt-6.1-sol',
-                                'model_reasoning_effort': 'low'}
+                                'model_reasoning_effort': 'low',
+                                'setup_timeout_seconds': 60, 'generation_timeout_seconds': 240}
     assert transport.validate_options(example['codex']) == example['codex']
 
 
@@ -64,7 +65,8 @@ def test_runtime_options_reach_provider(tmp_path, monkeypatch):
     from helperbot import manage
     paths = manage.Paths(tmp_path / 'config', tmp_path / 'data', tmp_path / 'units')
     paths.config.mkdir(mode=0o700)
-    options = {'web_search': 'live', 'model': 'operator-model', 'model_reasoning_effort': 'low'}
+    options = {'web_search': 'live', 'model': 'operator-model', 'model_reasoning_effort': 'low',
+               'setup_timeout_seconds': 60, 'generation_timeout_seconds': 240}
     target = paths.config / 'runtime.json'
     target.write_text(json.dumps({'provider': 'codex-oauth', 'sync_guild': 123, 'codex': options}))
     target.chmod(0o600)
@@ -82,6 +84,8 @@ def test_runtime_options_reach_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(manage, 'create_client', create)
     assert manage.run(paths, check=True, codex_executable=Path(sys.executable)) == 0
     assert seen[0].options == options
+    assert seen[0].setup_timeout == 60
+    assert seen[0].timeout == 240
 
 
 @pytest.mark.parametrize('scenario', ['web_success', 'web_open', 'web_find', 'web_other', 'web_no_sources'])

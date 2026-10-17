@@ -53,7 +53,7 @@ def test_selection_is_explicit(tmp_path):
         build_provider('codex-oauth')
 
 
-@pytest.mark.parametrize('timeout', [0, -1, True, float('nan'), 121])
+@pytest.mark.parametrize('timeout', [0, -1, True, float('nan'), 241])
 def test_invalid_timeout_rejected(tmp_path, timeout):
     with pytest.raises(ValueError):
         CodexOAuthProvider(Path(sys.executable), tmp_path, timeout=timeout)

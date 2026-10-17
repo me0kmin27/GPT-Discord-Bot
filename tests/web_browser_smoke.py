@@ -109,11 +109,11 @@ def main():
                 before['codex']['model'] = 'synthetic-omitted-model'
                 assert json.loads(runtime.read_text()) == before
                 omitted_readback = json.loads(command(['settings', 'show']))
-                assert omitted_readback['values']['setup_timeout_seconds'] == 3
-                assert omitted_readback['values']['generation_timeout_seconds'] == 20
+                assert omitted_readback['values']['setup_timeout_seconds'] == 60
+                assert omitted_readback['values']['generation_timeout_seconds'] == 240
                 # Explicit defaults must remain pinned on unrelated edits.
                 command(['settings', 'set', '--revision', omitted_readback['revision'],
-                         '--setup-timeout-seconds', '3', '--generation-timeout-seconds', '20'])
+                         '--setup-timeout-seconds', '60', '--generation-timeout-seconds', '240'])
                 page.reload()
                 before = json.loads(runtime.read_text())
                 page.locator('#model').fill('synthetic-pinned-model')

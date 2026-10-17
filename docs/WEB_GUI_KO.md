@@ -73,8 +73,13 @@ ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 USER@HOST
 | 추론 노력 | `codex.model_reasoning_effort` | 빈 값은 override 제거; 모델 지원 여부는 실제 요청 시 확인 |
 | 호스팅 웹 검색 | `codex.web_search` | `disabled` / `live`만 지원, `live`는 검색 사용 |
 | 명령 등록 범위/서버 ID | `sync_guild` | 특정 서버의 양의 ID 또는 전역 `null` |
-| 준비 제한 시간 | `codex.setup_timeout_seconds` | 기본 3초, 0 초과 30 이하 |
-| 생성 제한 시간 | `codex.generation_timeout_seconds` | 기본 20초, 0 초과 120 이하; 검색 포함 |
+| 준비 제한 시간 | `codex.setup_timeout_seconds` | 기본 60초, 0 초과 60 이하 |
+| 생성 제한 시간 | `codex.generation_timeout_seconds` | 기본 240초, 0 초과 240 이하; 검색 포함 |
+
+기본 작업 예산 합계는 300초입니다. 단계별 예산이며 단일 전체 제한 시간이 아닙니다.
+취소·프로세스 정리와 Discord 전달은 별도이므로 300초 안에 화면 표시를 보장하지 않습니다.
+기존에 직접 지정한 3/20 등의 값은 업그레이드만으로 바뀌지 않습니다.
+새 정책을 사용하려면 기본값으로 되돌리거나 60/240을 직접 지정하세요.
 
 시간은 의도적 대기 또는 전체 요청 제한이 아닙니다. 숫자/유한성/범위는
 `codex_transport.validate_options`와 기본 상수를 공유합니다.

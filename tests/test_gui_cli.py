@@ -9,6 +9,8 @@ def test_cli_uses_shared_settings_and_preserves_existing_commands(tmp_path, caps
     assert manage.main(args+['settings', 'show']) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown['values']['web_search'] == 'live'
+    assert shown['values']['setup_timeout_seconds'] == 60
+    assert shown['values']['generation_timeout_seconds'] == 240
     assert manage.main(args+['settings', 'set', '--model', 'cli-model', '--revision', shown['revision']]) == 0
     capsys.readouterr()
     assert manage.main(args+['doctor']) == 0

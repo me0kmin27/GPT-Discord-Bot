@@ -17,12 +17,12 @@
 <form method="post" action="/save">{{ csrf() }}<input type="hidden" name="revision" value="{{ config.revision }}">
 <section class="card"><h2>응답 생성</h2><p>ChatGPT Codex OAuth 인증은 기존 설정을 그대로 유지합니다.</p><div class="fields"><div><label for="model">모델 식별자</label><input id="model" name="model" maxlength="128" value="{{ config['values'].model }}" placeholder="Codex 기본값"><p class="hint">빈 값은 Codex 기본값. 사용 가능한 모델인지는 실제 요청에서 확인됩니다.</p></div><div><label for="effort">추론 노력</label><input id="effort" name="model_reasoning_effort" maxlength="128" value="{{ config['values'].model_reasoning_effort }}" placeholder="Codex 기본값"><p class="hint">모델이 지원하는 값만 사용하세요.</p></div><div><label for="web_search">호스팅 웹 검색</label><select id="web_search" name="web_search">{% for value,label in [('', '기본값 사용 (사용 안 함)'),('disabled','사용 안 함'),('live','실시간 검색 (live)')] %}<option value="{{ value }}" {% if (config['values'].web_search if 'web_search' in config.configured else '') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><p class="hint">live 사용 시 질문이 호스팅 검색으로 전송될 수 있습니다.</p></div></div></section>
 <section class="card"><h2>단계별 제한 시간</h2>
-<p>준비와 답변 생성은 별도의 제한 시간입니다. 대기 지연이나 전체 요청 20초 제한이 아닙니다.</p>
+<p>준비와 답변 생성은 별도의 제한 시간입니다. 기본 예산 합계는 300초(60초 + 240초)이며 고정 대기나 전체 요청의 단일 제한 시간이 아닙니다.</p>
 <p class="hint">기본값 사용은 저장된 재정의를 제거합니다. 숫자는 직접 지정을 선택한 경우에만 저장됩니다. 기존에 직접 지정한 값은 기본값과 같아도 유지됩니다.</p>
 <div class="fields">
-{% for key, label, hint in [
-    ('setup_timeout_seconds', '준비 제한 시간', '프로세스 준비, 인증 확인, 대화 시작 단계. 기본 3초.'),
-    ('generation_timeout_seconds', '답변 생성 제한 시간', '웹 검색을 포함한 답변 생성 단계. 기본 20초. 정리 시간은 별도입니다.')
+{% for key, label, maximum, hint in [
+    ('setup_timeout_seconds', '준비 제한 시간', 60, '프로세스 준비, 인증 확인, 대화 시작 단계. 기본 60초, 0 초과 60 이하.'),
+    ('generation_timeout_seconds', '답변 생성 제한 시간', 240, '웹 검색을 포함한 답변 생성 단계. 기본 240초, 0 초과 240 이하. 정리 시간은 별도입니다.')
 ] %}
 <div><label for="{{ key }}_mode">{{ label }} — 값 선택</label>
 <select id="{{ key }}_mode" name="{{ key }}_mode">
@@ -30,7 +30,7 @@
 <option value="override" {% if key in config.configured %}selected{% endif %}>직접 지정</option>
 </select>
 <label for="{{ key }}">{{ label }} (초, 직접 지정 시)</label>
-<input id="{{ key }}" name="{{ key }}" type="number" step="any" value="{{ config['values'][key] }}">
+<input id="{{ key }}" name="{{ key }}" type="number" step="any" max="{{ maximum }}" value="{{ config['values'][key] }}">
 <p class="hint">{{ hint }}</p></div>
 {% endfor %}
 </div></section>
